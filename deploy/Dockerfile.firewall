@@ -1,0 +1,30 @@
+# ==============================================================================
+# BombeCam - "Block cloud video" for Linux routers (bombecam-net)
+# ==============================================================================
+
+# Stage 1: Compile Go binaries
+FROM golang:1.26-alpine AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /bin/bombecam-net ./cmd/bombecam-net
+RUN CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /bin/bombecam-verify ./cmd/bombecam-verify
+RUN CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /bin/bombecam-policy ./cmd/bombecam-policy
+
+# Stage 2: Minimal runtime with nftables and iproute2
+FROM alpine:3.22
+
+LABEL org.opencontainers.image.title="BombeCam Firewall" \
+      org.opencontainers.image.description="BombeCam camera firewall: Block cloud video on a Linux router" \
+      org.opencontainers.image.vendor="BombeCam contributors" \
+      org.opencontainers.image.licenses="MIT"
+
+RUN apk add --no-cache nftables iproute2 conntrack-tools ca-certificates tzdata
+COPY --from=builder /bin/bombecam-net /usr/local/bin/bombecam-net
+COPY --from=builder /bin/bombecam-verify /usr/local/bin/bombecam-verify
+COPY --from=builder /bin/bombecam-policy /usr/local/bin/bombecam-policy
+
+ENTRYPOINT ["/usr/local/bin/bombecam-net", "daemon"]

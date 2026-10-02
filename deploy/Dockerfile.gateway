@@ -1,0 +1,62 @@
+# ==============================================================================
+# BombeCam - Media & Control Gateway Dockerfile
+#
+# The published image (ghcr.io/fever-r/bombecam-gateway, what
+# deploy/docker-compose.yml runs) is made by the release workflow from the
+# Linux downloads. Building it yourself compiles the source instead, from the
+# top of the source folder:
+#
+#   docker build -f deploy/Dockerfile.gateway -t bombecam-gateway:local .
+#
+# GATEWAY_FROM picks where the program comes from:
+#   source   (default) compile it here. The Osaio server key and app ID are
+#            built in (obscured) from osaio-setup.txt in the source folder
+#            (go run ./tools/setup saves it); without one of them, the web
+#            page asks for it (or set it in deploy/.env).
+#   release  take bombecam-gateway from the release download for the image's
+#            platform, checksum-checked, so the image runs exactly the
+#            published program. The downloads folder is passed as a build
+#            context named "downloads":
+#              --build-arg GATEWAY_FROM=release --build-context downloads=dist
+# ==============================================================================
+ARG GATEWAY_FROM=source
+
+# Compile on the build machine for the image's platform.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS source
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN keyflag="$(go run ./tools/setup -ldflags)" && \
+    CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" GOARM="${TARGETVARIANT#v}" \
+    go build -buildvcs=false -trimpath -ldflags="-s -w ${keyflag}" -o /out/bombecam-gateway ./cmd/bombecam-gateway
+
+# The program from the release download. 32-bit ARM uses the armv6 download,
+# which also runs on armv7.
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS release
+ARG TARGETARCH
+COPY deploy/extract-gateway.sh /usr/local/bin/extract-gateway.sh
+RUN --mount=from=downloads,target=/dist \
+    sh /usr/local/bin/extract-gateway.sh "$TARGETARCH" /dist /out
+
+FROM ${GATEWAY_FROM} AS gateway
+
+# Minimal runtime with FFmpeg
+FROM alpine:3.22
+
+LABEL org.opencontainers.image.title="BombeCam Gateway" \
+      org.opencontainers.image.description="BombeCam Media & Control Gateway" \
+      org.opencontainers.image.vendor="BombeCam contributors" \
+      org.opencontainers.image.licenses="MIT"
+
+RUN apk add --no-cache ffmpeg ca-certificates tzdata
+COPY --from=gateway /out/bombecam-gateway /usr/local/bin/bombecam-gateway
+
+EXPOSE 8654
+
+ENTRYPOINT ["/usr/local/bin/bombecam-gateway"]

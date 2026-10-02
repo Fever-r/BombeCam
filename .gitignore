@@ -1,0 +1,32 @@
+# Build outputs
+bin/
+/bombecam-gateway
+*.exe
+*.test
+coverage*
+
+# Test scratch data
+.cache/
+__pycache__/
+*.pyc
+
+# Local runtime / secrets (never commit)
+# The Osaio server key and app ID that builds include (go run ./tools/setup)
+/osaio-setup.txt
+/osaio-key.txt
+deploy/.env
+config.json
+server.key
+*.server.key
+app.id
+*.app.id
+deploy/mosquitto/certs/
+
+# Logs and captures
+*.log
+*.pcap
+*.pcapng
+*.etl
+
+# Release downloads (go run ./tools/release)
+dist/

@@ -1,0 +1,118 @@
+# BombeCam - Linux / Docker deployment
+#
+#   docker compose up -d                        # camera gateway (RTSP/HLS/WebRTC + controls)
+#   docker compose --profile isolation up -d    # + firewall appliance (needs CAMERA_MAC etc. in .env)
+#
+# Everything uses host networking: camera WebRTC media arrives over the LAN on
+# random UDP ports, NVRs read RTSP from the LAN, and the gateway, MediaMTX and
+# the firewall daemon talk to each other on 127.0.0.1.
+name: bombecam
+services:
+  mediamtx:
+    image: ${MEDIAMTX_IMAGE:-bluenviron/mediamtx:1.9.3@sha256:e3e9cd157344567a1a67f6c6606dcc7772b4ff589c23131832ffba3f92b97ca6}
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+
+  gateway:
+    # BombeCam's published image: the program from the Linux downloads, with
+    # the Osaio server key and app ID built in. The 1 tag follows the newest
+    # 1.x release; update with docker compose pull && docker compose up -d.
+    # BOMBECAM_GATEWAY_IMAGE in .env pins a release or runs an image you
+    # built yourself (see .env.example).
+    image: ${BOMBECAM_GATEWAY_IMAGE:-ghcr.io/fever-r/bombecam-gateway:1}
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      # Osaio server key (see .env.example). Empty: built-in or saved from the web page.
+      BOMBECAM_SERVER_KEY: ${BOMBECAM_SERVER_KEY:-}
+      BOMBECAM_SERVER_KEY_FILE: ${BOMBECAM_SERVER_KEY_FILE:-}
+      # Osaio app ID (see .env.example). Empty: built-in or saved from the web page.
+      BOMBECAM_APP_ID: ${BOMBECAM_APP_ID:-}
+      BOMBECAM_APP_ID_FILE: ${BOMBECAM_APP_ID_FILE:-}
+      OSAIO_EMAIL: ${OSAIO_EMAIL:-}
+      OSAIO_PASSWORD: ${OSAIO_PASSWORD:-}
+      OSAIO_COUNTRY: ${OSAIO_COUNTRY:-}
+      OSAIO_ENROLLED: ${OSAIO_ENROLLED:-}
+      # MediaMTX runs in its own container above
+      BOMBECAM_NO_MEDIAMTX_SUPERVISOR: "true"
+      BOMBECAM_MEDIAMTX_API: http://127.0.0.1:9997
+      BOMBECAM_RTSP_PUBLISH_BASE: rtsp://127.0.0.1:8554
+      BOMBECAM_RTSP_CONSUMER_BASE: ${BOMBECAM_RTSP_CONSUMER_BASE:-}
+      OSAIO_HLS_BASE: ${OSAIO_HLS_BASE:-http://127.0.0.1:8888}
+      BOMBECAM_WEBRTC_BASE: http://127.0.0.1:8889
+      # Web UI / API bind address. 127.0.0.1 = this machine only; use 0.0.0.0 to reach it from the LAN.
+      OSAIO_HTTP: ${GATEWAY_HTTP_BIND:-127.0.0.1}:${GATEWAY_HTTP_PORT:-8654}
+      # Creates BombeCam's administrator at start-up if there is none yet
+      # (for a machine whose page you only open from other devices).
+      BOMBECAM_ADMIN_NAME: ${BOMBECAM_ADMIN_NAME:-}
+      BOMBECAM_ADMIN_PASSWORD: ${BOMBECAM_ADMIN_PASSWORD:-}
+      BOMBECAM_HEADLESS: "true"
+      FFMPEG_PATH: /usr/bin/ffmpeg
+      CONTROL_TRANSPORT: ${CONTROL_TRANSPORT:-cloud}
+      MOSQUITTO_URL: tcp://127.0.0.1:1883
+      CAMERA_IP: ${CAMERA_IP:-}
+      CAMERA_SUBNET: ${CAMERA_SUBNET:-}
+      OSAIO_TIMEZONE: ${OSAIO_TIMEZONE:-}
+      OSAIO_ZONE_OFFSET: ${OSAIO_ZONE_OFFSET:-}
+      BOMBECAM_VIDEO_ONLY_DEVICES: ${BOMBECAM_VIDEO_ONLY_DEVICES:-}
+      STRICT_MANUAL: ${STRICT_MANUAL:-false}
+    volumes:
+      - gateway_state:/var/lib/bombecam
+    depends_on:
+      mediamtx:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${GATEWAY_HTTP_PORT:-8654}/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Experimental local MQTT control plane (CONTROL_TRANSPORT=mqtt). Requires
+  # TLS material in ./mosquitto/certs that the cameras accept; off by default.
+  mosquitto:
+    profiles: [local-mqtt]
+    image: ${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.18@sha256:d12c8f80dfc65b768bb9acecc7ef182b976f71fb681640b66358e5e0cf94e9e9}
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/certs:/mosquitto/certs:ro
+      - mosquitto_data:/mosquitto/data
+
+  firewall:
+    profiles: [isolation]
+    # Built from this source folder at every start (no published image).
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.firewall
+    image: bombecam-firewall:local
+    pull_policy: build
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    environment:
+      CAMERA_VLAN_IF: ${CAMERA_VLAN_IF:-}
+      CAMERA_SUBNET: ${CAMERA_SUBNET:-}
+      CAMERA_GATEWAY_IP: ${CAMERA_GATEWAY_IP:-}
+      WAN_INTERFACE: ${WAN_INTERFACE:-}
+      # Required: the daemon refuses to start without it (see deploy/.env.example)
+      CAMERA_MAC: ${CAMERA_MAC:-}
+      BOMBECAM_MASQUERADE: ${BOMBECAM_MASQUERADE:-0}
+      BOMBECAM_STATE_DIR: /var/lib/bombecam-net
+      BOMBECAM_NET_API_HOST: ${BOMBECAM_NET_API_HOST:-127.0.0.1}
+      BOMBECAM_NET_API_PORT: ${BOMBECAM_NET_API_PORT:-8653}
+      BOMBECAM_NET_API_KEY: ${BOMBECAM_NET_API_KEY:-}
+    volumes:
+      - firewall_state:/var/lib/bombecam-net
+
+  # bombecam-verify is run on demand, not in a loop: its control leg turns
+  # blocking off briefly to prove the network works, so it must never run on
+  # a timer. Run once after setup:
+  #   docker compose run --rm --entrypoint bombecam-verify firewall -mac <camera MAC> -ip <camera IP> -canary <addr> -canary-mac <mac>
+
+volumes:
+  mosquitto_data:
+  gateway_state:
+  firewall_state:

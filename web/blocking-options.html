@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ways to block camera traffic · BombeCam</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="info-page">
+  <main class="info-main">
+    <p class="info-back"><a href="/">&larr; Back to BombeCam</a></p>
+    <h1>Ways to block camera traffic</h1>
+    <p class="info-lead">
+      BombeCam's option keeps allowed controls working under destination and rate limits. Encrypted traffic may still contain image data.
+      It needs a router you control. If you don't have one, or want something different, these are the other ways
+      to limit what the cameras send to the cloud, with the pros and cons of each. This page is information only;
+      nothing here changes your setup.
+    </p>
+
+    <div class="info-table-wrap">
+      <table class="info-table">
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>Osaio app controls</th>
+            <th>BombeCam local streaming</th>
+            <th>Video and images to the cloud</th>
+            <th>What you need</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="#bombecam">BombeCam router block</a></td>
+            <td class="yes">Keep working</td>
+            <td class="yes">Keeps working</td>
+            <td class="partly">Destination and rate limits</td>
+            <td>GL.iNet or OpenWrt router</td>
+          </tr>
+          <tr>
+            <td><a href="#travel-router">Small travel router for the cameras</a></td>
+            <td class="yes">Keep working</td>
+            <td class="yes">Keeps working</td>
+            <td class="partly">Destination and rate limits</td>
+            <td>An extra GL.iNet router</td>
+          </tr>
+          <tr>
+            <td><a href="#full-block">Full internet block</a></td>
+            <td class="no">Stop</td>
+            <td class="partly">New streams can't start</td>
+            <td class="yes">Blocked</td>
+            <td>Almost any router</td>
+          </tr>
+          <tr>
+            <td><a href="#guest">Guest network without internet</a></td>
+            <td class="no">Stop</td>
+            <td class="partly">May not reach the cameras</td>
+            <td class="yes">Blocked</td>
+            <td>Router with a guest network</td>
+          </tr>
+          <tr>
+            <td><a href="#own-firewall">Your own firewall rules</a></td>
+            <td class="yes">Keep working</td>
+            <td class="yes">Keeps working</td>
+            <td class="partly">Blocked if set up right</td>
+            <td>pfSense, OPNsense, UniFi, MikroTik…</td>
+          </tr>
+          <tr>
+            <td><a href="#linux">Linux box as the cameras' router</a></td>
+            <td class="yes">Keep working</td>
+            <td class="yes">Keeps working</td>
+            <td class="partly">Destination and rate limits</td>
+            <td>Linux computer or Raspberry Pi</td>
+          </tr>
+          <tr>
+            <td><a href="#dns">DNS blocking (Pi-hole etc.)</a></td>
+            <td class="yes">Keep working</td>
+            <td class="yes">Keeps working</td>
+            <td class="no">Not blocked</td>
+            <td>A DNS filter</td>
+          </tr>
+          <tr>
+            <td><a href="#app-settings">Cloud features off in the app</a></td>
+            <td class="yes">Keep working</td>
+            <td class="yes">Keeps working</td>
+            <td class="partly">Up to the camera</td>
+            <td>Nothing</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <section class="info-method" id="bombecam">
+      <h2>BombeCam router block</h2>
+      <p>Rules on the router your cameras connect to let each blocked camera reach only Osaio's control server, the short stream-setup handshake, DNS and time sync, normally under a 4&nbsp;KB/s cap and 8&nbsp;KB burst per camera (some fw3 routers use a packet-rate fallback). Other internet destinations are dropped. These rules cannot inspect encrypted content or guarantee that no image data escapes. You connect the router once in BombeCam's Firewall tab, then switch each camera on or off.</p>
+      <div class="info-proscons">
+        <div><h3>Pros</h3><ul>
+          <li>The Osaio app can still switch the light, pan/tilt and change night vision.</li>
+          <li>BombeCam can start local streams at any time.</li>
+          <li>Set per camera, and easy to undo.</li>
+          <li>Only allows, drops and rate-limits. Nothing is redirected, and the camera isn't modified.</li>
+        </ul></div>
+        <div><h3>Cons</h3><ul>
+          <li>Needs a GL.iNet router on firmware 4.x or OpenWrt 21.02+, in Router mode.</li>
+          <li>Osaio still sees that the camera is online, your IP address, and which commands are sent.</li>
+          <li>Small images, fragments or low-rate video can fit within allowed encrypted traffic.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section class="info-method" id="travel-router">
+      <h2>Small travel router for the cameras</h2>
+      <p>If your main router comes from your internet provider, plug a small GL.iNet travel router into it and put the cameras (and ideally the PC running BombeCam) on the travel router's Wi-Fi. The travel router then runs BombeCam's router block.</p>
+      <div class="info-proscons">
+        <div><h3>Pros</h3><ul>
+          <li>Brings BombeCam's router block to any internet provider's router.</li>
+          <li>Keeps the cameras on their own network, apart from your other devices.</li>
+        </ul></div>
+        <div><h3>Cons</h3><ul>
+          <li>One more device to buy and power.</li>
+          <li>Must run in Router mode. Access point, extender and WDS modes pass traffic straight through, where the rules can't see it.</li>
+          <li>The cameras have to join its Wi-Fi, usually through the Osaio app.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section class="info-method" id="full-block">
+      <h2>Full internet block</h2>
+      <p>Most routers and internet-provider apps can pause a device or block it with parental controls. The camera then can't reach the internet at all.</p>
+      <div class="info-proscons">
+        <div><h3>Pros</h3><ul>
+          <li>Works with almost any router, with no extra hardware.</li>
+          <li>Nothing reaches Osaio, not even whether the camera is online.</li>
+        </ul></div>
+        <div><h3>Cons</h3><ul>
+          <li>The Osaio app can't control the camera.</li>
+          <li>Every stream starts with Osaio's handshake, so BombeCam can't start a new one while the block is on (after the camera or the PC restarts, for example). A stream that is already running may keep going.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section class="info-method" id="guest">
+      <h2>Guest or IoT network without internet</h2>
+      <p>Some routers can create a separate Wi-Fi network with internet access turned off, for smart-home devices.</p>
+      <div class="info-proscons">
+        <div><h3>Pros</h3><ul>
+          <li>Keeps the cameras apart from your computers and phones.</li>
+          <li>Same protection as a full block.</li>
+        </ul></div>
+        <div><h3>Cons</h3><ul>
+          <li>Same limits as a full block.</li>
+          <li>Guest networks often keep devices from reaching each other or your main network, so BombeCam on your PC may not reach the cameras at all.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section class="info-method" id="own-firewall">
+      <h2>Your own firewall rules</h2>
+      <p>On a firewall you run yourself (pfSense, OPNsense, UniFi, MikroTik and similar) you can write the same rules BombeCam uses: for the camera, allow <code>mqtts02-us.osaio.net</code> TCP 8883 and <code>wss-us.osaio.net</code> TCP 443, DNS (port 53) and time sync (UDP 123), then block everything else, IPv4 and IPv6.</p>
+      <div class="info-proscons">
+        <div><h3>Pros</h3><ul>
+          <li>Works with gear you already trust and manage.</li>
+          <li>App controls and local streaming keep working, as with BombeCam's block.</li>
+        </ul></div>
+        <div><h3>Cons</h3><ul>
+          <li>Set up and maintained by hand; BombeCam can't apply or check it.</li>
+          <li>Rules based on host names depend on the firewall resolving the same addresses the camera gets, and those addresses change.</li>
+          <li>Not every firewall can cap one device's bandwidth, and without the cap the allowed connections are wider than BombeCam's.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section class="info-method" id="linux">
+      <h2>Linux box as the cameras' router</h2>
+      <p>A Linux computer or Raspberry Pi that routes the cameras' network can run <code>bombecam-net block-cloud-video yes</code>, which applies the same rules as the router block.</p>
+      <div class="info-proscons">
+        <div><h3>Pros</h3><ul>
+          <li>The same protection as BombeCam's router block, on hardware you choose.</li>
+        </ul></div>
+        <div><h3>Cons</h3><ul>
+          <li>The box has to be the cameras' router (for example a Wi-Fi access point that routes), which takes technical setup.</li>
+          <li>Command line only; the Firewall tab doesn't manage it.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section class="info-method" id="dns">
+      <h2>DNS blocking (Pi-hole, AdGuard Home, NextDNS)</h2>
+      <p>A DNS filter refuses to look up the names of cloud storage and relay servers.</p>
+      <div class="info-proscons">
+        <div><h3>Pros</h3><ul>
+          <li>Easy if you already run one.</li>
+        </ul></div>
+        <div><h3>Cons</h3><ul>
+          <li>On its own it doesn't work for these cameras: they ask Google's DNS (8.8.8.8) directly, so a filter on your network never sees the lookups unless your router forces all DNS through it.</li>
+          <li>A camera that already knows a server's address isn't stopped.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section class="info-method" id="app-settings">
+      <h2>Cloud features off in the Osaio app</h2>
+      <p>Turn off cloud recording, motion clips and similar options in the camera's settings.</p>
+      <div class="info-proscons">
+        <div><h3>Pros</h3><ul>
+          <li>No hardware and no setup.</li>
+        </ul></div>
+        <div><h3>Cons</h3><ul>
+          <li>Nothing on your network enforces it: you rely on the camera and the app doing what the setting says.</li>
+          <li>Remote live view through Osaio's relay servers stays available.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <p class="info-back"><a href="/">&larr; Back to BombeCam</a></p>
+  </main>
+</body>
+</html>

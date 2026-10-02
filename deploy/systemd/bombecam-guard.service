@@ -1,0 +1,15 @@
+[Unit]
+Description=BombeCam Early Boot Fail-Closed Firewall Guard
+DefaultDependencies=no
+Before=network-pre.target systemd-networkd.service NetworkManager.service networking.service
+Wants=network-pre.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/default/bombecam
+ExecStart=/usr/local/bin/bombecam-guard.sh
+
+[Install]
+RequiredBy=network-pre.target systemd-networkd.service NetworkManager.service networking.service

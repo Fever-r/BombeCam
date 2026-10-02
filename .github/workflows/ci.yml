@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Vet
+        run: go vet ./...
+      - name: Go tests
+        run: go test -count=1 ./...
+      - name: Web page tests
+        run: |
+          node --check web/app.js
+          node tests/ui/app_controller_test.cjs
+      - name: Build every download
+        run: go run ./tools/release -out "$RUNNER_TEMP/dist" -allow-no-key
+
+  mediamtx:
+    name: Tests with MediaMTX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Download MediaMTX 1.9.3
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/mediamtx.tar.gz" https://github.com/bluenviron/mediamtx/releases/download/v1.9.3/mediamtx_v1.9.3_linux_amd64.tar.gz
+          echo "0b885dbfa4ef9c14cd00191c57d90d804255ff50403a28b85ceee7988c535b60  $RUNNER_TEMP/mediamtx.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/mediamtx.tar.gz" -C "$RUNNER_TEMP" mediamtx
+      - name: Go tests that start MediaMTX (one package at a time)
+        env:
+          BOMBECAM_TEST_MEDIAMTX: ${{ runner.temp }}/mediamtx
+        run: go test -count=1 -p 1 ./internal/mediamtx ./pkg/bridge ./cmd/bombecam-gateway
+
+  router:
+    name: Router script against real traffic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install firewall and SSH tools
+        run: sudo apt-get update && sudo apt-get install -y nftables iptables conntrack dropbear-bin
+      - name: Router script in network namespaces
+        run: sudo sh tests/router/netns_traffic_test.sh
+      - name: Restricted key against dropbear
+        run: sudo env "PATH=$PATH" sh tests/router/dropbear_gate_test.sh
+      - name: Linux boot guard
+        run: python3 tests/deploy/guard_test.py

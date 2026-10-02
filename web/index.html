@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%232563eb%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%223%22 fill=%22white%22/%3E%3C/svg%3E">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BombeCam</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Top Navigation & Header Bar -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand">
+        <span class="brand-icon">📹</span>
+        <span class="brand-name">BombeCam Gateway</span>
+        <span class="brand-ver" id="brand-ver"></span>
+      </div>
+      <button id="privacy-badge" class="badge badge-secondary badge-button" title="Firewall: click to choose which cameras are blocked">Firewall: checking...</button>
+    </div>
+    <div class="header-right">
+      <button type="button" id="session-badge" class="account-chip" title="Cameras added on this computer. Osaio logins are used only to find and reach your cameras.">
+        <span class="account-dot"></span><span id="session-badge-text">Loading cameras...</span>
+      </button>
+      <div class="account-controls" id="header-account-controls">
+        <button id="btn-open-add-cameras" class="btn btn-primary btn-sm" title="Add cameras from an Osaio login">＋ Add cameras</button>
+        <button id="btn-open-manage" class="btn btn-secondary btn-sm" title="Server key, app ID, start-up and shut down">⚙ Settings</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Application Container -->
+  <main class="app-main">
+    <!-- View Navigation Tabs (Shown in workspace) -->
+    <nav class="nav-tabs" id="main-nav-tabs" style="display: none;">
+      <button class="nav-tab active" data-tab="tab-dashboard" id="nav-tab-viewer">📹 Viewer</button>
+      <button class="nav-tab" data-tab="tab-cameras" id="nav-tab-cameras">📷 Cameras</button>
+      <button class="nav-tab" data-tab="tab-logins" id="nav-tab-logins">🔑 Osaio logins<span id="nav-logins-alert" class="nav-alert" hidden>!</span></button>
+      <button class="nav-tab" data-tab="tab-streams" id="nav-tab-streams">🔗 Streams &amp; ports</button>
+      <button class="nav-tab" data-tab="tab-safety" id="nav-tab-privacy">🛡️ Firewall</button>
+    </nav>
+
+    <!-- Sign-in and Add cameras -->
+    <div id="view-onboarding" class="onboarding-container">
+      <!-- Administrator: created on this PC at first start -->
+      <div id="screen-admin-create" class="onboarding-screen" style="display: none;">
+        <div class="onboarding-card">
+          <div class="onboarding-header">
+            <span class="onboarding-icon">🔐</span>
+            <h2 class="onboarding-title">Create the administrator</h2>
+            <p class="onboarding-subtitle">This is BombeCam's own sign-in. Phones, tablets and other computers on your network always need it to open BombeCam. It has nothing to do with your Osaio logins.</p>
+          </div>
+          <div id="admin-unreadable" class="alert alert-warning" hidden>
+            <p><strong>BombeCam's saved information can't be opened</strong> (its key is missing or the file is damaged). Delete it to start again.</p>
+            <button type="button" id="btn-admin-unreadable-delete" class="btn btn-danger btn-block">🗑 Delete all stored information</button>
+            <div id="admin-unreadable-status" class="list-status" role="status"></div>
+          </div>
+          <form id="form-admin-create" method="post" action="#" class="admin-form">
+            <div class="form-group">
+              <label for="admin-create-name">Name</label>
+              <input type="text" id="admin-create-name" name="username" class="form-control" autocomplete="username" value="admin" required spellcheck="false" autocapitalize="none">
+            </div>
+            <div class="form-group">
+              <label for="admin-create-password">Password</label>
+              <input type="password" id="admin-create-password" name="new-password" class="form-control" autocomplete="new-password" required minlength="8">
+              <small class="text-muted">At least 8 characters.</small>
+            </div>
+            <div class="form-group">
+              <label for="admin-create-confirm">Password again</label>
+              <input type="password" id="admin-create-confirm" name="confirm-password" class="form-control" autocomplete="new-password" required minlength="8">
+            </div>
+            <div class="form-group">
+              <label for="admin-create-hint">Password hint (optional)</label>
+              <input type="text" id="admin-create-hint" class="form-control" maxlength="120" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+              <small class="text-muted">A reminder for you, shown under "Forgot the password?" on this PC only. Don't put the password in it.</small>
+            </div>
+            <label class="checkbox-label admin-check">
+              <input type="checkbox" id="admin-create-local">
+              <span><strong>Also ask for this sign-in on this PC.</strong> Turn this on if other people use this computer. You can change it later in Settings.</span>
+            </label>
+            <div id="admin-create-status" class="list-status" role="status"></div>
+            <button type="submit" id="btn-admin-create" class="btn btn-primary btn-block btn-lg">Create administrator</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Administrator sign-in -->
+      <div id="screen-admin-signin" class="onboarding-screen" style="display: none;">
+        <div class="onboarding-card">
+          <div class="onboarding-header">
+            <span class="onboarding-icon">🔐</span>
+            <h2 class="onboarding-title">Sign in to BombeCam</h2>
+            <p class="onboarding-subtitle">Use BombeCam's administrator sign-in (not an Osaio login).</p>
+          </div>
+          <form id="form-admin-signin" method="post" action="#" class="admin-form">
+            <div class="form-group">
+              <label for="admin-signin-name">Name</label>
+              <input type="text" id="admin-signin-name" name="username" class="form-control" autocomplete="username" required spellcheck="false" autocapitalize="none">
+            </div>
+            <div class="form-group">
+              <label for="admin-signin-password">Password</label>
+              <input type="password" id="admin-signin-password" name="password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <div class="form-group" id="admin-signin-code-group" hidden>
+              <label for="admin-signin-code">Code from your authenticator app</label>
+              <input type="text" id="admin-signin-code" name="one-time-code" class="form-control code-input" autocomplete="one-time-code" inputmode="numeric" spellcheck="false">
+              <small class="text-muted">No phone? Enter one of your recovery codes instead.</small>
+            </div>
+            <label class="checkbox-label admin-check">
+              <input type="checkbox" id="admin-signin-remember" checked>
+              <span>Remember password in this browser</span>
+            </label>
+            <div id="admin-signin-status" class="list-status" role="status"></div>
+            <button type="submit" id="btn-admin-signin" class="btn btn-primary btn-block btn-lg">Sign in</button>
+          </form>
+          <details class="admin-forgot" id="admin-forgot">
+            <summary>Forgot the password?</summary>
+            <p class="control-hint">Try these first:</p>
+            <ul class="admin-forgot-tips">
+              <li id="admin-forgot-hint" hidden>Your hint: <strong id="admin-forgot-hint-text"></strong></li>
+              <li>Your browser or password manager may have it saved: click the password box, or search it for "BombeCam" or this page's address.</li>
+              <li>Check the name too (it is <code>admin</code> unless you changed it) and that Caps Lock is off.</li>
+              <li>Lost your phone with the authenticator app? Enter one of your recovery codes where the code is asked for.</li>
+              <li>Signed in on another device or browser? Change the password there under <strong>Settings → Sign-in settings</strong>.</li>
+            </ul>
+            <button type="button" id="btn-admin-forgot-still" class="btn btn-secondary btn-sm">I still can't sign in</button>
+            <div id="admin-forgot-reset" hidden>
+              <div id="admin-forgot-thispc">
+                <p class="control-hint">BombeCam has no password reset: the password only changes under <strong>Settings → Sign-in settings</strong>. Without it, the way back in is to start BombeCam over: this deletes all of its saved data on this PC (the administrator, Osaio logins, cameras and settings), first removing its rules and key from your router if one is connected, and shuts BombeCam down. Start it again to create a new administrator.</p>
+                <button type="button" id="btn-admin-start-over" class="btn btn-danger btn-block">⏻ Shut down and delete saved data</button>
+                <div id="admin-start-over-status" class="list-status" role="status"></div>
+              </div>
+              <p class="control-hint" id="admin-forgot-elsewhere">BombeCam has no password reset. Only the PC running BombeCam can start it over; it can't be done from this device.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- Another device, before the administrator exists -->
+      <div id="screen-admin-elsewhere" class="onboarding-screen" style="display: none;">
+        <div class="onboarding-card text-center">
+          <div class="onboarding-header">
+            <span class="onboarding-icon">🖥️</span>
+            <h2 class="onboarding-title">Finish setting up on the PC</h2>
+            <p class="onboarding-subtitle">BombeCam has no administrator yet. Open BombeCam on the PC it runs on and create one; then you can sign in here.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen 1: Login -->
+      <div id="screen-login" class="onboarding-screen">
+        <div class="onboarding-card onboarding-card-wide">
+          <div class="onboarding-header">
+            <span class="onboarding-icon">📹</span>
+            <h2 class="onboarding-title">Add your cameras</h2>
+            <p class="onboarding-subtitle">BombeCam makes your Osaio cameras (the ones you set up in the Osaio app, sold by Yoton, GNCC, Wolfang, Surfola and others) available on your own network (Home Assistant, NVRs, VLC). Your Osaio login is stored encrypted on this computer and used only to find and reach your cameras.</p>
+          </div>
+
+          <div class="connector-guide connector-guide-required" id="own-login-notice">
+            <div class="connector-guide-title">BombeCam needs its own Osaio login</div>
+            <ol class="connector-steps">
+              <li>In the Osaio app, create a second login (for example <code>yourname+cams@example.com</code>).</li>
+              <li>From your usual login, <strong>share</strong> the cameras you want BombeCam to use with it (open the camera &rarr; Settings &rarr; Share).</li>
+              <li>Enter the second login below, and keep using your usual login in the Osaio app.</li>
+            </ol>
+            <p class="connector-why">A camera streams live video to only one viewer per Osaio login at a time. If BombeCam and the Osaio app use the same login, opening live view in the app stops BombeCam's video until the app's view closes. With separate logins both work at once. Your main password also stays on your phone, and un-sharing a camera cuts BombeCam off.</p>
+          </div>
+
+          <div class="connector-guide connector-guide-required" id="server-key-panel" style="display: none;">
+            <div class="connector-guide-title">BombeCam needs a working Osaio server key</div>
+            <p class="connector-why">Osaio's cloud only answers requests signed with this key, and BombeCam has none it can use (see below). Paste a working key; it is saved on this computer. If you saved cameras before, BombeCam reconnects to them once the key is saved.</p>
+            <div class="form-group">
+              <label for="input-server-key">Osaio server key</label>
+              <input type="password" id="input-server-key" class="form-control" spellcheck="false" autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+              <small class="text-muted" id="server-key-problem"></small>
+            </div>
+            <button type="button" id="btn-save-server-key" class="btn btn-secondary btn-block">Save key</button>
+          </div>
+
+          <div class="connector-guide connector-guide-required" id="app-id-panel" style="display: none;">
+            <div class="connector-guide-title">BombeCam needs a working Osaio app ID</div>
+            <p class="connector-why">Osaio's cloud only answers requests that carry this app ID, and BombeCam has none it can use (see below). Paste a working app ID; it is saved on this computer. If you saved cameras before, BombeCam reconnects to them once the app ID is saved.</p>
+            <div class="form-group">
+              <label for="input-app-id">Osaio app ID</label>
+              <input type="password" id="input-app-id" class="form-control" spellcheck="false" autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+              <small class="text-muted" id="app-id-problem"></small>
+            </div>
+            <button type="button" id="btn-save-app-id" class="btn btn-secondary btn-block">Save app ID</button>
+          </div>
+
+          <form id="form-login">
+            <div class="form-group">
+              <label for="input-email">Osaio email</label>
+              <input type="text" id="input-email" required class="form-control" placeholder="you@example.com" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+            </div>
+            <div class="form-group">
+              <label for="input-password">Osaio password</label>
+              <input type="password" id="input-password" required class="form-control" placeholder="••••••••" autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+            </div>
+            <div class="form-group">
+              <label for="input-country">Account country calling code</label>
+              <input type="text" id="input-country" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" class="form-control" inputmode="numeric" pattern="\+?[1-9][0-9]{0,2}" maxlength="4" placeholder="For example +44" required>
+              <small class="text-muted">Use the country code for this Osaio login. You can change the suggestion.</small>
+            </div>
+            <button type="submit" id="btn-login-go" class="btn btn-primary btn-block btn-lg">Find my cameras</button>
+            <button type="button" id="btn-login-cancel" class="btn btn-secondary btn-block" style="display: none; margin-top: 8px;">Back to my cameras</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div id="screen-loading" class="onboarding-screen" style="display: none;">
+        <div class="onboarding-card text-center">
+          <div class="loading-spinner"></div>
+          <h3 id="loading-title" class="loading-title">Connecting to Osaio...</h3>
+          <p id="loading-desc" class="loading-desc text-muted">Authenticating credentials and setting up local profile...</p>
+        </div>
+      </div>
+
+      <!-- Screen 2: Discovery -->
+      <div id="screen-discovery" class="onboarding-screen" style="display: none;">
+        <div class="onboarding-card onboarding-card-wide">
+          <div class="onboarding-header">
+            <span class="onboarding-icon">🔍</span>
+            <h2 class="onboarding-title">Discovered Cameras</h2>
+            <p class="onboarding-subtitle">Select the cameras you wish to stream and control locally through BombeCam:</p>
+          </div>
+          <div class="discovery-toolbar">
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-discovery-select-all" checked>
+              <strong>Select All</strong>
+            </label>
+            <span id="discovery-count-badge" class="badge badge-info">0 cameras found</span>
+          </div>
+          <div id="discovery-cameras-list" class="discovery-list">
+            <!-- Populated dynamically by renderDiscovery() -->
+          </div>
+          <div class="onboarding-actions">
+            <button id="btn-add-to-bombecam" class="btn btn-success btn-block btn-lg" disabled>
+              Add to BombeCam
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Post-Enrollment Workspace -->
+    <div id="view-workspace" class="workspace-container" style="display: none;">
+      <!-- TAB 1: Viewer -->
+      <section id="tab-dashboard" class="tab-content active">
+        <div class="viewer-layout">
+          <!-- Live picture -->
+          <div class="card stage-card">
+            <div class="stage-bar">
+              <div class="stage-camera">
+                <label for="stream-camera-select" class="visually-hidden">Camera</label>
+                <select id="stream-camera-select" class="stage-select">
+                  <option value="">No cameras yet</option>
+                </select>
+                <span id="selected-cam-name" class="visually-hidden">No camera selected</span>
+              </div>
+              <div class="stage-status">
+                <span id="media-path-badge" class="media-path-badge hidden"></span>
+                <span id="decoded-frame-badge" class="live-indicator hidden">LIVE</span>
+              </div>
+            </div>
+            <div class="video-container" id="video-wrapper">
+              <video id="preview-player" autoplay muted playsinline></video>
+              <div class="video-toolbar">
+                <div class="video-tool-group" role="group" aria-label="Digital zoom">
+                  <button id="btn-zoom-out" class="video-tool" title="Zoom out" aria-label="Zoom out">&minus;</button>
+                  <button id="btn-zoom-reset" class="video-tool zoom-reset" title="Reset zoom"><span id="zoom-level-text">1.0x</span></button>
+                  <button id="btn-zoom-in" class="video-tool" title="Zoom in" aria-label="Zoom in">+</button>
+                </div>
+                <div class="video-tool-spacer"></div>
+                <div class="video-tool-group volume-control">
+                  <button id="btn-sound" class="video-tool" title="Turn camera sound on">🔇</button>
+                  <input id="volume-slider" type="range" min="0" max="100" step="1" value="80" title="Volume" aria-label="Volume">
+                </div>
+                <button id="btn-fullscreen" class="video-tool video-tool-solo" title="Full screen" aria-label="Full screen">⛶</button>
+              </div>
+              <div id="preview-overlay" class="preview-overlay">
+                <span id="preview-overlay-text">Select a camera to view its stream</span>
+                <button id="btn-overlay-retry" class="btn btn-sm btn-primary" style="display: none; margin-top: 0.75rem;">Retry now</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Camera controls -->
+          <aside class="card controls-card">
+            <div class="card-header controls-header">
+              <h2 class="card-title">Controls</h2>
+              <div class="controls-status">
+                <span id="local-control-status" class="telemetry-status"></span>
+                <span id="telemetry-readback-status" class="telemetry-status"></span>
+              </div>
+            </div>
+            <div class="card-body controls-body">
+              <div class="ptz-talk-row">
+                <div class="ptz-section" id="ptz-section">
+                  <div class="section-subtitle">
+                    <span>Pan &amp; tilt</span>
+                    <span id="ptz-status-badge" class="badge-fixed-lens hidden">Fixed lens</span>
+                  </div>
+                  <div class="ptz-dpad" id="ptz-dpad">
+                    <button class="ptz-btn ptz-corner" disabled></button>
+                    <button id="ptz-up" class="ptz-btn ptz-dir" data-dir="3" title="Tilt up">▲</button>
+                    <button class="ptz-btn ptz-corner" disabled></button>
+                    <button id="ptz-left" class="ptz-btn ptz-dir" data-dir="1" title="Pan left">◀</button>
+                    <button id="ptz-stop" class="ptz-btn ptz-stop" data-dir="0" title="Stop">●</button>
+                    <button id="ptz-right" class="ptz-btn ptz-dir" data-dir="2" title="Pan right">▶</button>
+                    <button class="ptz-btn ptz-corner" disabled></button>
+                    <button id="ptz-down" class="ptz-btn ptz-dir" data-dir="4" title="Tilt down">▼</button>
+                    <button class="ptz-btn ptz-corner" disabled></button>
+                  </div>
+                </div>
+                <div class="talk-section" id="row-talk-control">
+                  <div class="section-subtitle">Talk</div>
+                  <button id="btn-talkback" class="btn btn-primary btn-talk" title="Click to start talking, click again to stop (or hold while you speak)">🎙 Talk</button>
+                  <div class="talk-meta">
+                    <span id="talk-status-val" class="readback-pill">Off</span>
+                    <span id="talk-level" class="talk-level"><span id="talk-level-bar"></span></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Settings: the highlighted choice is what the camera last reported -->
+              <div class="switches-section">
+                <div class="section-subtitle">Settings</div>
+                <div class="control-row control-row-stacked" id="row-ir-control">
+                  <div class="control-row-main">
+                    <div class="control-info">
+                      <span class="control-name">Night vision</span>
+                    </div>
+                    <div class="segmented" role="group" aria-label="Night vision">
+                      <button id="btn-ir-auto" class="segmented-btn" data-mode="auto" title="Infrared night vision switches on by itself when the room gets dark">Auto</button>
+                      <button id="btn-ir-off" class="segmented-btn" data-mode="off" title="Infrared stays off; the picture goes dark at night">Off</button>
+                    </div>
+                  </div>
+                  <div id="ir-hint" class="control-hint">Auto: infrared switches on by itself when the room gets dark.</div>
+                </div>
+
+                <div class="control-row" id="row-led-control">
+                  <div class="control-info">
+                    <span class="control-name">Status light</span>
+                  </div>
+                  <div class="segmented" role="group" aria-label="Status light">
+                    <button id="btn-led-on" class="segmented-btn" data-onoff="on" title="The light on the front of the camera is on">On</button>
+                    <button id="btn-led-off" class="segmented-btn" data-onoff="off" title="The light on the front of the camera is off">Off</button>
+                  </div>
+                </div>
+
+                <div class="control-row" id="row-motion-control" title="The camera's own motion detection (the switch in the Osaio app)">
+                  <div class="control-info">
+                    <span class="control-name">Motion detection</span>
+                  </div>
+                  <div class="segmented" role="group" aria-label="Motion detection">
+                    <button id="btn-motion-on" class="segmented-btn" data-onoff="on" title="The camera detects motion and alerts the Osaio app">On</button>
+                    <button id="btn-motion-off" class="segmented-btn" data-onoff="off" title="The camera does not detect motion">Off</button>
+                  </div>
+                </div>
+
+                <div class="control-row" id="row-sound-control" title="The camera's own sound detection (the switch in the Osaio app)">
+                  <div class="control-info">
+                    <span class="control-name">Sound detection</span>
+                  </div>
+                  <div class="segmented" role="group" aria-label="Sound detection">
+                    <button id="btn-sound-on" class="segmented-btn" data-onoff="on" title="The camera detects sound and alerts the Osaio app">On</button>
+                    <button id="btn-sound-off" class="segmented-btn" data-onoff="off" title="The camera does not detect sound">Off</button>
+                  </div>
+                </div>
+
+                <div class="control-row" id="row-light-control">
+                  <div class="control-info">
+                    <span class="control-name">Spotlight</span>
+                    <span id="light-unsupported" class="readback-pill" style="display: none;">N/A</span>
+                  </div>
+                  <div class="segmented" role="group" aria-label="Spotlight">
+                    <button id="btn-light-on" class="segmented-btn" data-onoff="on" title="The white spotlight is on">On</button>
+                    <button id="btn-light-off" class="segmented-btn" data-onoff="off" title="The white spotlight is off">Off</button>
+                  </div>
+                </div>
+                <p class="control-hint controls-footnote">Detection runs on the camera and its alerts go to the Osaio app. The highlighted choice is what the camera last reported.</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- TAB: Cameras -->
+      <section id="tab-cameras" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Cameras</h2>
+              <p class="card-subtitle">Cameras added to BombeCam on this computer. Their names come from the Osaio app.</p>
+            </div>
+            <button type="button" id="btn-cameras-add" class="btn btn-primary btn-sm">＋ Add cameras</button>
+          </div>
+          <div class="card-body">
+            <div class="list-toolbar" id="cameras-toolbar">
+              <label for="cameras-filter" class="visually-hidden">Find a camera</label>
+              <input type="search" id="cameras-filter" class="form-control list-filter" placeholder="Find a camera by name, login or stream name" spellcheck="false" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+              <span id="cameras-count" class="text-muted list-count"></span>
+            </div>
+            <div id="cameras-status" class="list-status" role="status"></div>
+            <div id="cameras-list" class="item-list">
+              <div class="text-muted">Loading...</div>
+            </div>
+            <p class="control-hint list-footnote"><strong>Stream name</strong> is the readable part of the camera's address (<code>rtsp://&lt;this PC&gt;:8554/<em>name</em></code>). Changing it means updating Frigate or Home Assistant; the camera-ID address keeps working. <strong>Remove</strong> stops the camera's local stream and forgets it; if your router limits it, BombeCam removes it from the router too.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: Osaio logins -->
+      <section id="tab-logins" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Osaio logins</h2>
+              <p class="card-subtitle">BombeCam keeps these Osaio logins, encrypted on this computer, and uses them only to find and connect to your cameras. Add another login to bring in the cameras it can see.</p>
+            </div>
+            <button type="button" id="btn-logins-add" class="btn btn-primary btn-sm">＋ Add a login</button>
+          </div>
+          <div class="card-body">
+            <div id="logins-status" class="list-status" role="status"></div>
+            <div id="logins-list" class="item-list">
+              <div class="text-muted">Loading...</div>
+            </div>
+            <details class="how-it-works">
+              <summary>Which login should BombeCam use?</summary>
+              <div class="how-body">
+                <ul>
+                  <li>Use a login only BombeCam uses: in the Osaio app, create a second login (for example <code>yourname+cams@example.com</code>) and <strong>share</strong> your cameras with it from your usual login (open the camera &rarr; Settings &rarr; Share).</li>
+                  <li>A camera streams live video to one viewer per Osaio login at a time. If BombeCam and the Osaio app use the same login, opening live view in the app stops BombeCam's video until the app's view closes.</li>
+                  <li>If you change a login's password in the Osaio app, press <strong>Update password</strong> here. The new password is checked with Osaio before it is saved, and nothing else changes.</li>
+                  <li><strong>Remove</strong> forgets the login and the cameras added through it. Other logins and their cameras are not affected. Un-sharing a camera in the Osaio app also cuts BombeCam off from it.</li>
+                </ul>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: Streams & ports -->
+      <section id="tab-streams" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Stream addresses</h2>
+              <p class="card-subtitle">Paste these into VLC, an NVR, Frigate or Home Assistant on your network.</p>
+            </div>
+            <button id="btn-refresh-nvr" class="btn btn-secondary btn-sm">🔄 Refresh</button>
+          </div>
+          <div class="card-body">
+            <p class="control-hint" id="nvr-address-note">Addresses use this PC's network address, so other devices can open them.</p>
+            <div id="stream-list" class="stream-list">
+              <div class="text-muted">Loading...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Ports on this PC</h2>
+              <p class="card-subtitle">What other devices connect to. Ports can be changed on the <a href="/integrations.html">Frigate / Home Assistant page</a>.</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="port-grid">
+              <div class="port-item">
+                <span class="port-num" id="port-tag-rtsp">8554</span>
+                <span class="port-name">RTSP</span>
+                <span class="port-desc">TCP &middot; NVRs, VLC, Frigate, Home Assistant</span>
+              </div>
+              <div class="port-item">
+                <span class="port-num" id="port-tag-rtsp-udp">8000&ndash;8001</span>
+                <span class="port-name">RTSP over UDP</span>
+                <span class="port-desc">UDP &middot; moves to a free pair if these are taken</span>
+              </div>
+              <div class="port-item">
+                <span class="port-num" id="port-tag-hls">8888</span>
+                <span class="port-name">HLS</span>
+                <span class="port-desc">TCP &middot; browsers and media players</span>
+              </div>
+              <div class="port-item">
+                <span class="port-num" id="port-tag-webrtc">8889</span>
+                <span class="port-name">WebRTC</span>
+                <span class="port-desc">TCP, and UDP <span id="port-tag-webrtc-udp">8189</span> &middot; low-delay browser video</span>
+              </div>
+              <div class="port-item" id="port-item-snapshot" hidden>
+                <span class="port-num" id="port-tag-snapshot">8655</span>
+                <span class="port-name">Snapshots</span>
+                <span class="port-desc">TCP &middot; still images for other devices</span>
+              </div>
+              <div class="port-item port-item-local">
+                <span class="port-num" id="port-tag-web">8654</span>
+                <span class="port-name">This web page</span>
+                <span class="port-desc">This PC only</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Frigate & Home Assistant -->
+        <div class="card nvr-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Frigate &amp; Home Assistant</h2>
+              <p class="card-subtitle">Each camera's stream, ready to paste. The full guide covers controls in Home Assistant, snapshots, a stream password and ports.</p>
+            </div>
+            <div class="nvr-card-actions">
+              <a href="/integrations.html" class="btn btn-primary nvr-guide-link" id="link-integrations">Full Frigate / Home Assistant guide &rarr;</a>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="integration-block">
+              <div class="snippet-header">
+                <div class="snippet-title">Frigate (add to your <code>config.yml</code>)</div>
+                <button id="btn-copy-frigate" class="btn btn-secondary btn-sm btn-copy">📋 Copy Frigate YAML</button>
+              </div>
+              <pre class="code-block"><code id="snippet-frigate"># Loading Frigate configuration...</code></pre>
+            </div>
+
+            <div class="integration-block">
+              <div class="snippet-header">
+                <div class="snippet-title">Home Assistant (Generic Camera, set up in Home Assistant's screens)</div>
+                <button id="btn-copy-ha" class="btn btn-secondary btn-sm btn-copy">📋 Copy steps</button>
+              </div>
+              <pre class="code-block snippet-steps"><code id="snippet-ha">Loading Home Assistant steps...</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    <!-- TAB 3: Firewall (Block cloud video) -->
+    <section id="tab-safety" class="tab-content">
+      <div class="card privacy-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Block cloud video</h2>
+            <p class="card-subtitle" id="privacy-headline">Camera internet access is limited by destination and rate; encrypted traffic may still carry image data.</p>
+          </div>
+          <div id="privacy-state-badge" class="badge badge-secondary">Not set</div>
+        </div>
+        <div class="card-body">
+          <p class="privacy-hardware">
+            <strong>Needs:</strong> a GL.iNet or OpenWrt router that your cameras connect to, set to Router mode. Most internet-provider routers can't do this.
+            <a href="/blocking-options.html" target="_blank" rel="noopener" id="link-blocking-options">Other ways to block camera traffic</a>
+          </p>
+
+          <div class="privacy-router-row">
+            <div class="privacy-router-info">
+              <div class="option-section-title">Router</div>
+              <div id="privacy-router-status" class="privacy-router-status">Not connected</div>
+            </div>
+            <div class="privacy-router-actions">
+              <button id="btn-privacy-connect" class="btn btn-primary btn-sm">Connect router</button>
+              <button id="btn-privacy-check" class="btn btn-secondary btn-sm" style="display: none;" title="Ask the router what is in its firewall right now">Check router</button>
+              <button id="btn-privacy-disconnect" class="btn btn-secondary btn-sm" style="display: none;">Disconnect</button>
+            </div>
+          </div>
+
+          <div id="privacy-alert" class="alert" style="display: none;"></div>
+
+          <div class="privacy-master-row">
+            <label class="privacy-switch-label" for="privacy-master">
+              <span class="privacy-master-title">Block all cameras</span>
+              <span class="control-hint" id="privacy-master-hint">New cameras are blocked automatically while this is on.</span>
+            </label>
+            <input type="checkbox" id="privacy-master" class="privacy-switch" role="switch" aria-label="Block all cameras">
+          </div>
+          <ul id="privacy-camera-list" class="privacy-camera-list">
+            <li class="text-muted">Loading...</li>
+          </ul>
+          <p class="control-hint privacy-choice-hint" id="privacy-choice-hint">
+            <strong>On:</strong> the Osaio app can still control the camera (light, pan/tilt, night vision), under destination and rate limits. Encrypted allowed traffic may still contain image data.
+            <strong>Off:</strong> the camera works normally. Turn a camera off for a while to update its firmware, then turn it back on.
+          </p>
+          <p class="control-hint privacy-choice-hint" id="privacy-lan-hint">
+            <strong>Same network:</strong> a phone or tablet on the same network as a blocked camera may still show its live view in the Osaio app. The video then travels directly over your own network, not the internet, so the camera is still blocked from sending video out.
+          </p>
+
+          <div id="privacy-result" class="privacy-result" style="display: none;"></div>
+          <details id="privacy-output" class="privacy-output" style="display: none;">
+            <summary>Router output</summary>
+            <pre class="code-block"><code id="privacy-output-text"></code></pre>
+          </details>
+
+          <details id="privacy-how" class="how-it-works">
+            <summary>How it works</summary>
+            <div class="how-body">
+              <h3>How the blocking works</h3>
+              <ul>
+                <li>The rules live on the router your cameras connect to (not on this PC) and recognise each camera by its network (MAC) address. Each camera has its own switch.</li>
+                <li>A blocked camera can still reach only:
+                  <ul>
+                    <li>Osaio's control server (<code>mqtts02-us.osaio.net</code>, port 8883, encrypted), so the Osaio app can still switch the light, pan/tilt and change night vision;</li>
+                    <li id="how-stream-setup">Osaio's stream-setup server (<code>wss-us.osaio.net</code>) for the few kilobytes of connection details BombeCam needs to start a local stream;</li>
+                    <li>DNS and time sync.</li>
+                  </ul>
+                </li>
+                <li>All allowed internet traffic normally shares a cap of <strong>4&nbsp;KB/s per camera</strong>, with an 8&nbsp;KB burst. Some fw3 routers use a 4-packet/s limit with an 8-packet burst instead; router status reports the cap mode. These limits reduce typical streaming, but cannot rule out images, fragments or low-rate video in allowed traffic.</li>
+                <li>Other internet destinations are dropped, including the known Backblaze upload and Osaio relay destinations, and all IPv6. Content sent to an allowed destination remains subject to the rate limit.</li>
+                <li>Traffic to devices on your own network, like this PC, is left alone, so local streaming keeps working. That includes the Osaio app on a phone connected to the same network: it may keep showing the live view, because that video goes directly over your network. Away from your network, the app's live view has to come through Osaio's relay servers, which a blocked camera can't reach. The router only allows, drops and bandwidth-limits traffic. Nothing is redirected or changed, and the camera itself isn't modified.</li>
+                <li>When blocking turns on, the router clears that camera's open connections, so a connection it opened before the block can't carry on past the rules. The camera reconnects through the firewall by itself. If a connection outside the allowed list comes back straight away, the router reports that the block isn't working instead of showing Blocked.</li>
+                <li><strong>What Osaio can still see:</strong> that the camera is online, your internet (IP) address, and which commands are sent to it. The control channel is encrypted between the camera and Osaio, so the router can't read it; the router cannot determine whether its payload contains image data.</li>
+                <li><strong>Connecting the router:</strong> you enter the router's admin password once. BombeCam uses it for that one connection and never saves it. It installs its own key on the router, which can only turn camera blocking on and off (it can't open a login on the router). That is what lets the switches, and removing a camera, take effect right away.</li>
+              </ul>
+
+              <h3>What it requires</h3>
+              <ul>
+                <li>A router that runs OpenWrt: a GL.iNet router on firmware 4.x, or OpenWrt 21.02 or newer. Older (fw3) and newer (fw4) OpenWrt firewalls both work; BombeCam detects which one the router uses.</li>
+                <li>The router in <strong>Router mode</strong>, with the cameras on its Wi-Fi or LAN ports. In access point, extender or WDS mode it passes traffic through without routing it, and the rules can't see it.</li>
+                <li>SSH turned on (it is by default on GL.iNet) and the router's admin password for connecting once.</li>
+                <li>This PC on the same router, and each camera streamed to BombeCam at least once, so BombeCam knows its MAC address.</li>
+                <li>Vendor hardware or network acceleration turned off on the router (GL.iNet calls it "Network Acceleration"). BombeCam handles OpenWrt's own offloading setting by itself and warns you if another accelerator is active, because accelerated connections can skip the bandwidth cap.</li>
+                <li>Most internet-provider routers (for example Xfinity) can't run this. A small GL.iNet travel router plugged into your main router, with the cameras on its Wi-Fi, can. <a href="/blocking-options.html" target="_blank" rel="noopener">Other ways to block camera traffic</a> compares the options.</li>
+              </ul>
+
+              <h3>Setup</h3>
+              <ol>
+                <li>Connect the cameras and this PC to the OpenWrt or GL.iNet router.</li>
+                <li>Open each camera's live view here once.</li>
+                <li>Press <strong>Connect router</strong> and enter the router's address (GL.iNet routers use <code>192.168.8.1</code> unless you changed it) and its admin password.</li>
+                <li>Turn on <strong>Block all cameras</strong>, or the switch for each camera you want blocked.</li>
+                <li>Check it: in the Osaio app, switch the camera's status light. It should still respond. New cloud clips should stop appearing.</li>
+              </ol>
+              <p class="how-note"><strong>Disconnect</strong> removes everything BombeCam added to the router, including its key. Removing a camera from BombeCam also removes it from the router, and so does deleting all stored information.</p>
+              <p class="how-note">Prefer to do it by hand? <a href="/api/v1/privacy/router-script" download>Download the router script</a>, copy it to the router's <code>/tmp</code> folder, and run it over SSH:</p>
+              <pre class="code-block"><code id="privacy-manual-command">sh /tmp/bombecam-router.sh apply yes --camera "Name=AA:BB:CC:DD:EE:FF"</code></pre>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+    </div> <!-- #view-workspace -->
+  </main>
+
+  <!-- MODAL: Update one Osaio login's password -->
+  <div id="modal-login-password" class="modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Update password</h3>
+        <button class="modal-close" data-close="modal-login-password">&times;</button>
+      </div>
+      <form id="form-login-password" autocomplete="off">
+        <div class="modal-body">
+          <p class="text-muted">Enter the password this Osaio login uses now, for example after changing it in the Osaio app. BombeCam checks it with Osaio before saving it; your cameras and settings stay as they are.</p>
+          <div class="form-group">
+            <label for="login-password-email">Osaio email</label>
+            <input type="text" id="login-password-email" readonly class="form-control" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+          </div>
+          <div class="form-group">
+            <label for="login-password-input">Password</label>
+            <input type="password" id="login-password-input" class="form-control" placeholder="••••••••" required autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+          </div>
+          <div class="form-group">
+            <label for="login-password-country">Account country calling code</label>
+            <input type="text" id="login-password-country" class="form-control" inputmode="numeric" pattern="\+?[1-9][0-9]{0,2}" maxlength="4" placeholder="For example +44" required autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+          </div>
+          <div id="login-password-status" class="list-status" role="status"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close="modal-login-password">Cancel</button>
+          <button type="submit" id="btn-login-password-save" class="btn btn-primary">Check and save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Administrator sign-in settings -->
+  <div id="modal-admin" class="modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Sign-in settings</h3>
+        <button class="modal-close" data-close="modal-admin">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" id="admin-summary"></p>
+        <div id="admin-status" class="list-status" role="status"></div>
+
+        <section class="admin-section">
+          <h4>Password</h4>
+          <form id="form-admin-password" method="post" action="#" class="admin-form">
+            <input type="text" name="username" id="admin-pw-name" autocomplete="username" hidden>
+            <div class="form-group">
+              <label for="admin-pw-current">Current password</label>
+              <input type="password" id="admin-pw-current" name="password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <div class="form-group">
+              <label for="admin-pw-new">New password</label>
+              <input type="password" id="admin-pw-new" name="new-password" class="form-control" autocomplete="new-password" required minlength="8">
+            </div>
+            <div class="form-group">
+              <label for="admin-pw-confirm">New password again</label>
+              <input type="password" id="admin-pw-confirm" name="confirm-password" class="form-control" autocomplete="new-password" required minlength="8">
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Change password</button>
+            <p class="control-hint">Every other browser signed in to BombeCam is signed out.</p>
+          </form>
+        </section>
+
+        <section class="admin-section">
+          <h4>Password hint</h4>
+          <form id="form-admin-hint" method="post" action="#" class="admin-form">
+            <div class="form-group">
+              <label for="admin-hint-text">Hint (empty to remove)</label>
+              <input type="text" id="admin-hint-text" class="form-control" maxlength="120" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+              <small class="text-muted">Shown under "Forgot the password?" on this PC only. Don't put the password in it.</small>
+            </div>
+            <div class="form-group">
+              <label for="admin-hint-password">Password, to confirm</label>
+              <input type="password" id="admin-hint-password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Save hint</button>
+          </form>
+        </section>
+
+        <section class="admin-section">
+          <h4>Sign-in on this PC</h4>
+          <form id="form-admin-local" method="post" action="#" class="admin-form">
+            <label class="checkbox-label admin-check">
+              <input type="checkbox" id="admin-local-require">
+              <span>Ask for the sign-in on the PC running BombeCam too. Other devices always have to sign in.</span>
+            </label>
+            <div class="form-group">
+              <label for="admin-local-password">Password, to confirm</label>
+              <input type="password" id="admin-local-password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+          </form>
+        </section>
+
+        <section class="admin-section">
+          <h4>Two-step sign-in</h4>
+          <p class="control-hint" id="admin-2fa-state"></p>
+          <form id="form-admin-2fa-start" method="post" action="#" class="admin-form" hidden>
+            <p class="control-hint">After the password, BombeCam also asks for a 6-digit code from an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden and others).</p>
+            <div class="form-group">
+              <label for="admin-2fa-start-password">Password, to confirm</label>
+              <input type="password" id="admin-2fa-start-password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Set up two-step sign-in</button>
+          </form>
+          <form id="form-admin-2fa-confirm" method="post" action="#" class="admin-form" hidden>
+            <p class="control-hint">Scan this with your authenticator app, or type the key into it. Then enter the code it shows.</p>
+            <div class="admin-qr"><img id="admin-2fa-qr" alt="QR code for your authenticator app"></div>
+            <p class="control-hint">Key: <code id="admin-2fa-secret" class="admin-secret"></code></p>
+            <div class="form-group">
+              <label for="admin-2fa-code">Code from the app</label>
+              <input type="text" id="admin-2fa-code" class="form-control code-input" autocomplete="one-time-code" inputmode="numeric" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Turn on</button>
+          </form>
+          <div id="admin-2fa-codes" class="admin-codes" hidden>
+            <p><strong>Your recovery codes.</strong> Each one signs you in once if you don't have your phone. Save them somewhere safe now: they are not shown again.</p>
+            <pre class="code-block" id="admin-2fa-codes-list"></pre>
+            <button type="button" id="btn-admin-codes-copy" class="btn btn-secondary btn-sm">📋 Copy</button>
+            <button type="button" id="btn-admin-codes-save" class="btn btn-secondary btn-sm">⬇ Save as file</button>
+          </div>
+          <form id="form-admin-2fa-manage" method="post" action="#" class="admin-form" hidden>
+            <div class="form-group">
+              <label for="admin-2fa-manage-password">Password</label>
+              <input type="password" id="admin-2fa-manage-password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <div class="form-group">
+              <label for="admin-2fa-manage-code">Code from the app (or a recovery code), to turn it off</label>
+              <input type="text" id="admin-2fa-manage-code" class="form-control code-input" autocomplete="one-time-code" inputmode="numeric">
+            </div>
+            <button type="button" id="btn-admin-2fa-recovery" class="btn btn-secondary btn-sm">New recovery codes</button>
+            <button type="button" id="btn-admin-2fa-disable" class="btn btn-danger btn-sm">Turn off two-step sign-in</button>
+          </form>
+        </section>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-admin">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Replace the Osaio server key -->
+  <div id="modal-server-key" class="modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Osaio server key</h3>
+        <button class="modal-close" data-close="modal-server-key">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">Osaio's cloud only answers requests signed with this key. BombeCam's downloads come with the latest key known when they were released; a build from source may have none. BombeCam doesn't show the key. If Osaio changes its key, sign-in and live video stop working until you paste the new one here. It takes effect at once.</p>
+        <div class="form-group">
+          <label for="modal-server-key-input">New server key</label>
+          <input type="text" id="modal-server-key-input" class="form-control code-input" placeholder="Paste the new key" spellcheck="false" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+          <small class="text-muted" id="modal-server-key-status"></small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-server-key">Cancel</button>
+        <button id="btn-reset-server-key" class="btn btn-secondary" style="display: none;">Use built-in key</button>
+        <button id="btn-submit-server-key" class="btn btn-primary">Save key</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Replace the Osaio app ID -->
+  <div id="modal-app-id" class="modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Osaio app ID</h3>
+        <button class="modal-close" data-close="modal-app-id">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">Osaio's cloud only answers requests that carry this app ID. BombeCam's downloads come with the latest app ID known when they were released; a build from source may have none. BombeCam doesn't show the app ID. If Osaio changes its app ID, sign-in and live video stop working until you paste the new one here. It takes effect at once.</p>
+        <div class="form-group">
+          <label for="modal-app-id-input">New app ID</label>
+          <input type="text" id="modal-app-id-input" class="form-control code-input" placeholder="Paste the new app ID" spellcheck="false" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+          <small class="text-muted" id="modal-app-id-status"></small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-app-id">Cancel</button>
+        <button id="btn-reset-app-id" class="btn btn-secondary" style="display: none;">Use built-in app ID</button>
+        <button id="btn-submit-app-id" class="btn btn-primary">Save app ID</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Connect the router for "Block cloud video" -->
+  <div id="modal-privacy-apply" class="modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" id="privacy-modal-title">Connect your router</h3>
+        <button class="modal-close" data-close="modal-privacy-apply">&times;</button>
+      </div>
+      <form id="form-privacy-apply" autocomplete="off">
+        <div class="modal-body">
+          <p class="text-muted" id="privacy-modal-desc">BombeCam connects to your router over SSH once, installs its router script and a key that can only turn camera blocking on and off, then applies your choices. The password is used for this one connection and isn't saved.</p>
+          <div class="form-group">
+            <label for="privacy-router-address">Router address</label>
+            <input type="text" id="privacy-router-address" class="form-control" placeholder="192.168.8.1" spellcheck="false" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+            <small class="text-muted" id="privacy-router-address-hint">The router your cameras connect to (GL.iNet routers use 192.168.8.1 unless you changed it).</small>
+          </div>
+          <div class="form-group">
+            <label for="privacy-router-password">Router admin password</label>
+            <input type="password" id="privacy-router-password" class="form-control" placeholder="••••••••" autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+          </div>
+          <details class="privacy-advanced">
+            <summary>Advanced</summary>
+            <div class="form-group" style="margin-top: 8px;">
+              <label for="privacy-router-user">SSH user</label>
+              <input type="text" id="privacy-router-user" class="form-control" value="root" spellcheck="false" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+            </div>
+            <p class="control-hint" id="privacy-host-key"></p>
+            <button type="button" id="btn-privacy-forget-router" class="btn btn-secondary btn-sm" style="display: none;">Forget this router</button>
+          </details>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close="modal-privacy-apply">Cancel</button>
+          <button type="submit" id="btn-privacy-confirm" class="btn btn-primary">Connect</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="hls.min.js"></script>
+  <script src="app.js"></script>
+  <!-- MODAL: Add cameras (from a stored Osaio login or a new one; merges with existing) -->
+  <div id="modal-add-cameras" class="modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Add cameras</h3>
+        <button class="modal-close" data-close="modal-add-cameras">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group" id="add-cam-login-group">
+          <label for="add-cam-login">Osaio login</label>
+          <select id="add-cam-login" class="form-control"></select>
+        </div>
+        <div id="add-cam-new-login">
+          <p class="text-muted">BombeCam uses this login only to find its cameras and connect to them. It is stored encrypted on this computer and listed under <strong>Osaio logins</strong>.</p>
+          <p class="modal-callout"><strong>Use a login only BombeCam uses.</strong> Share your cameras to it from your usual login. Live view in the Osaio app with the same login stops BombeCam's video until the app's view closes.</p>
+          <div class="form-group">
+            <label for="add-cam-email">Osaio email</label>
+            <input type="email" id="add-cam-email" class="form-control" placeholder="you@example.com" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+          </div>
+          <div class="form-group">
+            <label for="add-cam-password">Osaio password</label>
+            <input type="password" id="add-cam-password" class="form-control" placeholder="••••••••" autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+          </div>
+          <div class="form-group">
+            <label for="add-cam-country">Account country calling code</label>
+            <input type="text" id="add-cam-country" class="form-control" inputmode="numeric" pattern="\+?[1-9][0-9]{0,2}" maxlength="4" placeholder="For example +44" required autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
+            <small class="text-muted">Use the country code for this Osaio login. You can change the suggestion.</small>
+          </div>
+        </div>
+        <button id="btn-search-cameras" class="btn btn-primary btn-block">🔍 Search for cameras</button>
+        <div id="add-cameras-status" class="list-status" role="status" style="margin-top:10px;"></div>
+        <div id="add-cameras-results" class="discovery-list" style="margin-top:10px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-add-cameras">Close</button>
+        <button id="btn-add-selected" class="btn btn-primary" disabled>Add selected cameras</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Settings (server key, app ID, start-up, shut down, delete everything) -->
+  <div id="modal-manage" class="modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Settings</h3>
+        <button class="modal-close" data-close="modal-manage">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">Cameras are managed on the <strong>Cameras</strong> tab and Osaio logins on the <strong>Osaio logins</strong> tab.</p>
+        <div id="manage-status" class="text-muted"></div>
+        <div class="manage-actions">
+          <div class="manage-action" id="manage-admin">
+            <div>
+              <div class="manage-action-title">Administrator</div>
+              <div class="control-hint" id="manage-admin-hint">BombeCam's own sign-in.</div>
+            </div>
+            <div class="manage-buttons">
+              <button type="button" id="btn-open-admin" class="btn btn-secondary btn-sm">🔐 Sign-in settings</button>
+              <button type="button" id="btn-admin-signout" class="btn btn-secondary btn-sm" hidden>Sign out</button>
+            </div>
+          </div>
+          <div class="manage-action">
+            <div>
+              <div class="manage-action-title">Server key</div>
+              <div class="control-hint" id="manage-server-key-hint">Replace it if Osaio changes its key.</div>
+            </div>
+            <button id="btn-open-server-key" class="btn btn-secondary btn-sm" title="Replace the Osaio server key">🔑 Server key</button>
+          </div>
+          <div class="manage-action">
+            <div>
+              <div class="manage-action-title">App ID</div>
+              <div class="control-hint" id="manage-app-id-hint">Replace it if Osaio changes its app ID.</div>
+            </div>
+            <button id="btn-open-app-id" class="btn btn-secondary btn-sm" title="Replace the Osaio app ID">🪪 App ID</button>
+          </div>
+          <div class="manage-action">
+            <div>
+              <div class="manage-action-title">Stop cameras</div>
+              <div class="control-hint">Stops every stream until you start them again. The Firewall is not changed.</div>
+            </div>
+            <button id="btn-stop-cameras" class="btn btn-secondary btn-sm" title="Stop streaming from all cameras (your router settings are not changed)">⛔ Stop cameras</button>
+          </div>
+          <div class="manage-action" id="manage-autostart" style="display: none;">
+            <div>
+              <div class="manage-action-title">Start with Windows</div>
+              <div class="control-hint" id="autostart-hint">Starts BombeCam in the background when you sign in, so streams and recordings keep going after a restart. It shows as an icon by the clock.</div>
+            </div>
+            <div class="segmented" role="group" aria-label="Start with Windows">
+              <button type="button" id="btn-autostart-on" class="segmented-btn" data-autostart="on">On</button>
+              <button type="button" id="btn-autostart-off" class="segmented-btn" data-autostart="off">Off</button>
+            </div>
+          </div>
+          <div class="manage-action" id="manage-shutdown">
+            <div>
+              <div class="manage-action-title">Shut down BombeCam</div>
+              <div class="control-hint" id="shutdown-hint">Closes BombeCam and its video server, so streams stop until you open BombeCam again. Firewall rules stay on your router and keep working.</div>
+            </div>
+            <button id="btn-shutdown" class="btn btn-danger btn-sm">⏻ Shut down</button>
+          </div>
+        </div>
+        <div class="alert alert-warning" style="margin-top:16px;">
+          <strong>Delete stored information.</strong> This removes every stored Osaio login, camera and setting from this computer. If a router is connected in the Firewall tab, BombeCam first removes its rules and key from the router. Your administrator sign-in stays; you stay signed in and can add Osaio logins again.
+        </div>
+        <button id="btn-delete-all" class="btn btn-danger btn-block">🗑 Delete all stored information</button>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-manage">Close</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

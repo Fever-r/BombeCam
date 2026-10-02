@@ -1,0 +1,6 @@
+# Normalize text files to LF in the repository.
+* text=auto
+# Shell scripts run on Linux and routers: always LF, also in a Windows checkout.
+*.sh text eol=lf
+# Windows batch files need CRLF.
+*.cmd text eol=crlf

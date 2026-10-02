@@ -1,0 +1,48 @@
+name: Docker images
+
+on:
+  push:
+    branches: ['**'] # Tag builds are checked by the Release workflow.
+    paths:
+      - 'deploy/**'
+      - 'tests/deploy/gateway_*'
+      - '.github/workflows/docker.yml'
+      - '.github/workflows/release.yml'
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - 'tests/deploy/gateway_*'
+      - '.github/workflows/docker.yml'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            download: linux-amd64
+          - platform: linux/arm64
+            download: linux-arm64
+          - platform: linux/arm/v7
+            download: linux-armv6
+          - platform: linux/arm/v6
+            download: linux-armv6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Extraction regressions
+        run: python3 tests/deploy/gateway_extract_test.py
+      - name: Build isolated test downloads
+        run: go run ./tools/release -allow-no-key -targets '${{ matrix.download }}' -out dist
+      - name: Run complete release and source images
+        run: python3 tests/deploy/gateway_image_test.py --downloads dist --platform '${{ matrix.platform }}' --source

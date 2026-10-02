@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Use with Frigate and Home Assistant · BombeCam</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%232563eb%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%223%22 fill=%22white%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="info-page integ-page">
+  <main class="info-main">
+    <p class="info-back"><a href="/">&larr; Back to BombeCam</a></p>
+    <h1>Use your cameras with Frigate and Home Assistant</h1>
+    <p class="info-lead">
+      BombeCam turns each camera into a stream on this PC that Frigate, Home Assistant, VLC or any NVR on your
+      network can open. Video and sound come straight from the camera over your network. Pick the address
+      below, then follow the steps for Frigate or Home Assistant. Every value has a copy button.
+    </p>
+
+    <div id="integ-warnings" class="integ-warnings" hidden></div>
+
+    <!-- 1. Address -->
+    <section class="info-method" id="address">
+      <h2>1. The address other devices use</h2>
+      <p>Frigate and Home Assistant reach this PC by its network address. If this PC is on more than one network,
+        pick the one your Frigate or Home Assistant machine is on.</p>
+      <div id="integ-addresses" class="integ-addresses" role="radiogroup" aria-label="Address of this PC">
+        <span class="text-muted">Loading...</span>
+      </div>
+      <p class="integ-note" id="integ-address-note"></p>
+      <div class="integ-cams" id="integ-cams"></div>
+      <p class="integ-note">Stream names come from the camera names when you add them and don't change when a camera is renamed.
+        Change one on the <strong>Cameras</strong> tab. The older form, <code>rtsp://&lt;this PC&gt;:8554/&lt;camera ID&gt;</code>, keeps working.</p>
+    </section>
+
+    <!-- 2. Where they run -->
+    <section class="info-method" id="where">
+      <h2>2. Where do Frigate or Home Assistant run?</h2>
+      <div class="integ-where">
+        <label class="integ-where-choice"><input type="radio" name="integ-where" value="other" checked>
+          <span><strong>On another device</strong> (a mini PC, NAS, Raspberry Pi, or Home Assistant OS)</span></label>
+        <label class="integ-where-choice"><input type="radio" name="integ-where" value="docker">
+          <span><strong>In Docker Desktop on this PC</strong></span></label>
+        <label class="integ-where-choice"><input type="radio" name="integ-where" value="same">
+          <span><strong>Directly on this PC</strong> (without Docker)</span></label>
+      </div>
+      <p class="integ-note" id="integ-where-note">They use this PC's network address, shown above. Windows has to let them in: see <a href="#firewall">If other devices can't connect</a>.</p>
+    </section>
+
+    <!-- 3. Frigate -->
+    <section class="info-method" id="frigate">
+      <h2>3. Frigate</h2>
+      <ol class="integ-steps">
+        <li>Open your Frigate configuration: in Frigate, <strong>Settings &rarr; Configuration editor</strong> (or the <code>config.yml</code> file).</li>
+        <li>Copy the cameras below into it. If your configuration already has a <code>go2rtc:</code> or <code>cameras:</code> section,
+          put these entries under the existing one (each section may appear only once).</li>
+        <li>Save and restart Frigate. Each camera shows up with live view (with sound) and recordings. Recordings keep the camera's own sound.</li>
+      </ol>
+      <div class="integ-snippet">
+        <div class="snippet-header">
+          <div class="snippet-title">Add to your Frigate configuration</div>
+          <button class="btn btn-secondary btn-sm btn-copy" data-copy-from="integ-frigate">📋 Copy</button>
+        </div>
+        <pre class="code-block"><code id="integ-frigate">Loading...</code></pre>
+      </div>
+      <details class="integ-details">
+        <summary>Starting Frigate from scratch? A complete configuration</summary>
+        <div class="integ-snippet">
+          <div class="snippet-header">
+            <div class="snippet-title">Complete <code>config.yml</code></div>
+            <button class="btn btn-secondary btn-sm btn-copy" data-copy-from="integ-frigate-new">📋 Copy</button>
+          </div>
+          <pre class="code-block"><code id="integ-frigate-new">Loading...</code></pre>
+        </div>
+      </details>
+      <ul class="integ-tips">
+        <li>Frigate looks for objects 5 times a second, on the stream's own picture size. The snippet suggests a smaller size when the camera sends more than 1280 pixels across.</li>
+        <li>Frigate and BombeCam on the same Linux machine with host networking both want port 8554. Change BombeCam's ports under <a href="#options">Options</a>.</li>
+        <li>For Home Assistant's Frigate integration, Frigate needs MQTT turned on (with your broker's address).</li>
+      </ul>
+    </section>
+
+    <!-- 4. Home Assistant camera -->
+    <section class="info-method" id="homeassistant">
+      <h2>4. Home Assistant: the camera</h2>
+      <p>Home Assistant sets up cameras like these with its <strong>Generic Camera</strong> integration, in its own screens (not in <code>configuration.yaml</code>). Do this once per camera:</p>
+      <div id="integ-ha-cams" class="integ-ha-cams"><span class="text-muted">Loading...</span></div>
+      <ul class="integ-tips">
+        <li>Recent Home Assistant versions play the stream with low delay through their built-in go2rtc.</li>
+        <li>If the live view stutters or keeps restarting, open the camera in Home Assistant's <strong>Devices &amp; services &rarr; Generic Camera</strong>, click <strong>Configure</strong>, open <strong>More options</strong> and turn on <strong>Use wallclock as timestamps</strong>.</li>
+        <li>Already using Frigate? Its Home Assistant integration adds the cameras for you, and you can skip this step.</li>
+      </ul>
+    </section>
+
+    <!-- 5. Home Assistant controls -->
+    <section class="info-method" id="mqtt">
+      <h2>5. Home Assistant: controls and status (MQTT)</h2>
+      <p>With an MQTT broker (most people use Home Assistant's <strong>Mosquitto broker</strong> add-on), each camera appears in Home Assistant
+        as a device, with no YAML: night vision, status light, motion and sound detection, spotlight (on models that have one),
+        pan and tilt buttons, and whether the stream and the controls are connected. Commands go to the camera the same way as BombeCam's own buttons
+        (through Osaio's cloud, like the Osaio app).</p>
+      <form id="integ-mqtt-form" class="integ-form" autocomplete="off">
+        <label class="integ-switch"><input type="checkbox" id="mqtt-enabled"> <span>Send cameras to Home Assistant over MQTT</span></label>
+        <div class="integ-form-grid">
+          <label>Broker address <input type="text" id="mqtt-host" class="form-control" placeholder="192.168.1.10" spellcheck="false" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+          <label>Port <input type="number" id="mqtt-port" class="form-control" placeholder="1883" min="1" max="65535" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+          <label>User name <input type="text" id="mqtt-user" class="form-control" spellcheck="false" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+          <label>Password <input type="password" id="mqtt-pass" class="form-control" placeholder="" autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+        </div>
+        <details class="integ-details"><summary>Advanced</summary>
+          <label>Discovery prefix <input type="text" id="mqtt-prefix" class="form-control" placeholder="homeassistant" spellcheck="false" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+        </details>
+        <div class="integ-form-actions">
+          <button type="submit" class="btn btn-primary btn-sm" id="mqtt-save">Save</button>
+          <span id="mqtt-status" class="integ-status"></span>
+        </div>
+        <p class="integ-note">For the Mosquitto add-on, create a Home Assistant user for BombeCam (Settings &rarr; People &rarr; Users) and use it here.
+          The password is stored encrypted on this PC.</p>
+      </form>
+    </section>
+
+    <!-- 6. Options -->
+    <section class="info-method" id="options">
+      <h2>6. Options</h2>
+      <div class="integ-option">
+        <label class="integ-switch"><input type="checkbox" id="opt-stream-auth"> <span><strong>Stream password</strong></span></label>
+        <p class="integ-note">Off: any device on your network can open the streams, like most cameras. On: other devices need a user name and
+          password, which BombeCam adds to the addresses on this page for you. It stays off until you turn it on, so Frigate or Home Assistant
+          setups that already work keep working; after turning it on, copy the new addresses into them.</p>
+        <p class="integ-note" id="opt-stream-status" role="status">Checking the running video server...</p>
+        <p class="integ-creds" id="opt-stream-creds" hidden>User <code id="opt-stream-user"></code> &middot; Password <code id="opt-stream-pass"></code>
+          <button type="button" class="btn btn-secondary btn-sm" id="opt-stream-regen">New password</button></p>
+      </div>
+      <div class="integ-option">
+        <label class="integ-switch"><input type="checkbox" id="opt-snapshots"> <span><strong>Snapshots for other devices</strong></span></label>
+        <p class="integ-note">A still-picture address for each camera (Home Assistant's still image, notifications), served on port <span id="opt-snapshot-port">8655</span>.
+          It only serves pictures: nothing else of BombeCam is reachable from the network. Needs FFmpeg on this PC.
+          Windows may ask whether <code>bombecam.exe</code> may use the network: allow it on Private networks.</p>
+        <p class="integ-status" id="opt-snapshot-status"></p>
+      </div>
+      <details class="integ-details" id="opt-ports">
+        <summary>Ports</summary>
+        <p class="integ-note" id="opt-ports-note">Change these only if another program already uses them (Frigate's go2rtc uses 8554, 8555 and 1984). Frigate and Home Assistant need the new addresses afterwards.</p>
+        <div class="integ-form-grid">
+          <label>RTSP <input type="number" id="port-rtsp" class="form-control" min="1024" max="65535" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+          <label>HLS <input type="number" id="port-hls" class="form-control" min="1024" max="65535" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+          <label>WebRTC <input type="number" id="port-webrtc" class="form-control" min="1024" max="65535" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+          <label>WebRTC media (UDP) <input type="number" id="port-webrtc-udp" class="form-control" min="1024" max="65535" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+          <label>Snapshots <input type="number" id="port-snapshot" class="form-control" min="1024" max="65535" autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true"></label>
+        </div>
+        <div class="integ-form-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="ports-save">Save ports</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="ports-default">Back to defaults</button>
+        </div>
+      </details>
+    </section>
+
+    <!-- 7. Check -->
+    <section class="info-method" id="check">
+      <h2>7. Check it from another device</h2>
+      <ul class="integ-tips">
+        <li><strong>VLC</strong>: Media &rarr; Open Network Stream, paste a camera's stream address, click Play.</li>
+        <li><strong>FFmpeg</strong>: <code id="integ-ffprobe">ffprobe -rtsp_transport tcp rtsp://…</code> lists the video (H.264) and sound tracks.</li>
+        <li>BombeCam's own viewer must show the camera as <strong>LIVE</strong>: other devices get the same stream.</li>
+      </ul>
+    </section>
+
+    <!-- 8. Troubleshooting -->
+    <section class="info-method" id="firewall">
+      <h2>If other devices can't connect</h2>
+      <ul class="integ-tips">
+        <li><strong>Windows firewall.</strong> The first time BombeCam starts, Windows asks whether <code>mediamtx.exe</code> may use the network.
+          Allow it on <strong>Private</strong> networks. Missed it? Open <em>Windows Security &rarr; Firewall &amp; network protection &rarr; Allow an app through firewall</em>,
+          find <code>mediamtx</code> and tick <em>Private</em> (and <code>bombecam</code> too, for snapshots).</li>
+        <li><strong>Public network.</strong> Windows blocks incoming connections on networks it treats as Public. Open <em>Settings &rarr; Network &amp; internet</em>,
+          click your Wi-Fi or Ethernet connection, and set <em>Network profile type</em> to <strong>Private</strong>.</li>
+        <li><strong>Wrong address.</strong> Pick the address of the network your Frigate or Home Assistant machine is on (step 1), then copy the addresses again.</li>
+        <li><strong>PC asleep.</strong> Streams stop while this PC sleeps. Set Windows to never sleep while plugged in if you record around the clock.</li>
+        <li><strong>Port in use.</strong> If the video server reports a port that is already used, another program (often Frigate's go2rtc) has it: change the ports under Options.</li>
+      </ul>
+    </section>
+
+    <p class="info-back"><a href="/">&larr; Back to BombeCam</a></p>
+  </main>
+  <div id="toast-container" class="toast-container"></div>
+  <script src="integrations.js"></script>
+</body>
+</html>

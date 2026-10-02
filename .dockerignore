@@ -1,0 +1,18 @@
+bin
+dist
+.git
+deploy/.env
+deploy/mosquitto/certs
+**/server.key
+# osaio-setup.txt is deliberately not ignored: a gateway image built from
+# source reads it (deploy/Dockerfile.gateway).
+**/*.server.key
+**/app.id
+**/*.app.id
+**/*_test.go
+*.log
+*.pcap
+config.json
+.cache
+**/__pycache__
+**/*.pyc
