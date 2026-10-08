@@ -501,14 +501,10 @@ func NewViewer(sig *Signaling, vc *VideoCall, uuid, model, callID, ffmpeg, rtspU
 				s := (p[2] >> 7) & 1
 				fuType := p[2] & 0x3f
 				if s == 1 {
-					var nalHdr byte = 0x41 // non-IDR P-slice
-					if fuType == 18 || fuType == 19 || fuType == 20 {
-						nalHdr = 0x65 // IDR keyframe slice
-					}
 					firstByte := p[1]
 					pkt = make([]byte, 4+2+len(p[3:]))
 					copy(pkt[0:4], startCode)
-					pkt[4] = nalHdr
+					pkt[4] = fuStartNALHeader(fuType)
 					pkt[5] = firstByte
 					copy(pkt[6:], p[3:])
 				} else {

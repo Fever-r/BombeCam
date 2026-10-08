@@ -5,7 +5,7 @@ package bridge
 // The byte transform matches the WS03's packetization (verified against real
 // cameras): fragmentation units use the HEVC-style
 // FU header (type 49); the start fragment is rebuilt as an H.264 slice header
-// (0x65 for IDR fragment types 19/20/18, otherwise 0x41) followed by payload
+// (0x65 for IDR fragment types, see fuStartNALHeader, otherwise 0x41) followed by payload
 // byte 1 and the fragment data; every other payload is a complete NAL unit.
 // TestNALAssembler_MatchesLegacyAnnexB pins this equivalence.
 type nalAssembler struct {
@@ -30,12 +30,8 @@ func (a *nalAssembler) Push(p []byte) {
 		fuType := p[2] & 0x3f
 		if start {
 			a.Flush()
-			var nalHdr byte = 0x41 // non-IDR slice
-			if fuType == 18 || fuType == 19 || fuType == 20 {
-				nalHdr = 0x65 // IDR slice
-			}
 			a.cur = make([]byte, 0, 2+len(p[3:])+4096)
-			a.cur = append(a.cur, nalHdr, p[1])
+			a.cur = append(a.cur, fuStartNALHeader(fuType), p[1])
 			a.cur = append(a.cur, p[3:]...)
 			a.inFU = true
 		} else if a.inFU {
@@ -63,6 +59,18 @@ func (a *nalAssembler) Flush() {
 	}
 	a.cur = nil
 	a.inFU = false
+}
+
+// fuStartNALHeader returns the H.264 NAL header that replaces a start
+// fragment's FU header: 0x65 (IDR slice) for the fragment types cameras use
+// for keyframes, otherwise 0x41 (non-IDR slice). The WS03 marks keyframes with
+// 18/19/20; the P5 (GP5_T6S8A3) uses 50, and 32 for other frames.
+func fuStartNALHeader(fuType byte) byte {
+	switch fuType {
+	case 18, 19, 20, 50:
+		return 0x65
+	}
+	return 0x41
 }
 
 // h264NALType returns the H.264 nal_unit_type of a NAL unit.

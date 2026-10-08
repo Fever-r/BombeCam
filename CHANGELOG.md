@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Video now works on the GNCC P5 (`GP5_T6S8A3`), which marks keyframes differently from the WS03. Before, it connected and played sound but never showed video ([#2](https://github.com/Fever-r/BombeCam/issues/2), thanks @RuggeroCapo).
+
 ## 1.0.0 — first public release
 
 **Gateway**

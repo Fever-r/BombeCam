@@ -17,7 +17,7 @@ func legacyAnnexB(p []byte) []byte {
 		fuType := p[2] & 0x3f
 		if s == 1 {
 			var nalHdr byte = 0x41
-			if fuType == 18 || fuType == 19 || fuType == 20 {
+			if fuType == 18 || fuType == 19 || fuType == 20 || fuType == 50 {
 				nalHdr = 0x65
 			}
 			firstByte := p[1]
@@ -105,5 +105,31 @@ func TestNALAssembler_IDRAndOrphanContinuation(t *testing.T) {
 	}
 	if h264NALType(nals[1]) != 7 {
 		t.Fatalf("expected SPS, got %x", nals[1])
+	}
+}
+
+// The P5 (GP5_T6S8A3) marks keyframe start fragments with FU type 50 and other
+// frames with 32; the WS03's 18/19/20 must keep producing IDR slices.
+func TestNALAssembler_KeyframeFUTypes(t *testing.T) {
+	for _, tc := range []struct {
+		fuType byte
+		idr    bool
+	}{{18, true}, {19, true}, {20, true}, {50, true}, {1, false}, {32, false}} {
+		var nals [][]byte
+		a := newNALAssembler(func(n []byte) { nals = append(nals, append([]byte(nil), n...)) })
+		a.Push([]byte{0x68, 0xCE})                            // PPS
+		a.Push([]byte{49 << 1, 0x88, 0x80 | tc.fuType, 1, 2}) // start
+		a.Push([]byte{49 << 1, 0x88, tc.fuType, 3})           // continuation
+		a.Push([]byte{49 << 1, 0x88, 0x40 | tc.fuType, 4})    // end
+		if len(nals) != 2 {
+			t.Fatalf("fuType %d: got %d NALs", tc.fuType, len(nals))
+		}
+		want := byte(0x41)
+		if tc.idr {
+			want = 0x65
+		}
+		if !bytes.Equal(nals[1], []byte{want, 0x88, 1, 2, 3, 4}) {
+			t.Fatalf("fuType %d: NAL = %x, want header %#x", tc.fuType, nals[1], want)
+		}
 	}
 }
