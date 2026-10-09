@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Gateway**
+- Video now plays from cameras that mark keyframes differently from the WS03: the GNCC P5 (`GP5_T6S8A3`) is recognized directly, and for other unfamiliar cameras keyframes are recognized from the video itself. If no keyframe arrives within 10 seconds, the log names what the camera sent. Diagnosis by @RuggeroCapo (#2).
+
 ## 1.0.0 — first public release
 
 **Gateway**

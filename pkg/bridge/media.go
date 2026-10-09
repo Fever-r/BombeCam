@@ -434,6 +434,7 @@ func NewViewer(sig *Signaling, vc *VideoCall, uuid, model, callID, ffmpeg, rtspU
 
 		startCode := []byte{0x00, 0x00, 0x00, 0x01}
 		buf := make([]byte, 2048)
+		detector := keyframeDetector{label: model}
 
 		for {
 			n, _, err := tr.Read(buf)
@@ -494,17 +495,16 @@ func NewViewer(sig *Signaling, vc *VideoCall, uuid, model, callID, ffmpeg, rtspU
 					v.mu.Unlock()
 				}
 			}
+			if len(p) == 0 {
+				continue
+			}
 			nalType := (p[0] >> 1) & 0x3f
 
 			var pkt []byte
 			if nalType == 49 && len(p) >= 3 {
 				s := (p[2] >> 7) & 1
-				fuType := p[2] & 0x3f
 				if s == 1 {
-					var nalHdr byte = 0x41 // non-IDR P-slice
-					if fuType == 18 || fuType == 19 || fuType == 20 {
-						nalHdr = 0x65 // IDR keyframe slice
-					}
+					nalHdr := detector.startHeader(p)
 					firstByte := p[1]
 					pkt = make([]byte, 4+2+len(p[3:]))
 					copy(pkt[0:4], startCode)
@@ -515,8 +515,9 @@ func NewViewer(sig *Signaling, vc *VideoCall, uuid, model, callID, ffmpeg, rtspU
 					pkt = make([]byte, len(p[3:]))
 					copy(pkt, p[3:])
 				}
-			} else if len(p) > 0 {
+			} else {
 				// Single NAL unit (e.g. SPS or PPS)
+				detector.observeNAL(p)
 				pkt = make([]byte, 4+len(p))
 				copy(pkt[0:4], startCode)
 				copy(pkt[4:], p)

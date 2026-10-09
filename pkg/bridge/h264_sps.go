@@ -15,12 +15,14 @@ type VideoInfo struct {
 
 // h264SPS holds the fields BombeCam needs from a sequence parameter set.
 type h264SPS struct {
-	ProfileIDC   int
-	LevelIDC     int
-	ChromaFormat int
-	POCType      int
-	Width        int
-	Height       int
+	ProfileIDC          int
+	LevelIDC            int
+	ChromaFormat        int
+	Log2MaxFrameNum     int
+	SeparateColourPlane bool
+	POCType             int
+	Width               int
+	Height              int
 	// FPS from the VUI timing info (time_scale / (2 * num_units_in_tick)); 0 if absent.
 	FPS float64
 }
@@ -152,12 +154,11 @@ func parseH264SPS(nal []byte) (h264SPS, error) {
 	s.LevelIDC = int(r.bits(8))
 	r.ue() // seq_parameter_set_id
 	s.ChromaFormat = 1
-	separateColourPlane := uint(0)
 	switch s.ProfileIDC {
 	case 100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135:
 		s.ChromaFormat = int(r.ue())
 		if s.ChromaFormat == 3 {
-			separateColourPlane = r.bit()
+			s.SeparateColourPlane = r.bit() == 1
 		}
 		r.ue()            // bit_depth_luma_minus8
 		r.ue()            // bit_depth_chroma_minus8
@@ -178,7 +179,7 @@ func parseH264SPS(nal []byte) (h264SPS, error) {
 			}
 		}
 	}
-	r.ue() // log2_max_frame_num_minus4
+	s.Log2MaxFrameNum = int(r.ue()) + 4
 	s.POCType = int(r.ue())
 	switch s.POCType {
 	case 0:
@@ -210,7 +211,7 @@ func parseH264SPS(nal []byte) (h264SPS, error) {
 		return h264SPS{}, r.err
 	}
 	chroma := s.ChromaFormat
-	if separateColourPlane == 1 {
+	if s.SeparateColourPlane {
 		chroma = 0
 	}
 	cropX, cropY := 1, 2-frameMbsOnly

@@ -236,6 +236,7 @@ func newNativeSink(rtspURL, label string, wantAudio bool, transcoderPath ...stri
 		s.transcoderPath = transcoderPath[0]
 	}
 	s.asm = newNALAssembler(func(n []byte) { s.auNALs = append(s.auNALs, n) })
+	s.asm.detector.label = s.label
 	return s
 }
 

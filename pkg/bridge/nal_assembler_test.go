@@ -68,6 +68,10 @@ func TestNALAssembler_MatchesLegacyAnnexB(t *testing.T) {
 			body := make([]byte, 1+rng.Intn(1200))
 			rng.Read(body)
 			pl := append([]byte{49 << 1, byte(rng.Intn(256)), fu}, body...)
+			if f == 0 && fuType == 1 {
+				// Unknown-type WS03 starts are P slices, not random I headers.
+				pl[1] = 0xe0 // first_mb=0, slice_type=P, PPS=0: never a keyframe candidate
+			}
 			packets = append(packets, pl)
 		}
 	}
