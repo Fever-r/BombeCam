@@ -165,7 +165,7 @@ func collectPrivacyCameras(ctx context.Context, streamMgr *StreamManager, pm pro
 		}
 	}
 	if len(learned) > 0 && pm != nil && prof != nil {
-		_, _ = pm.Update(ctx, func(p *profile.Profile) error {
+		_, err := pm.Update(ctx, func(p *profile.Profile) error {
 			for id, mac := range learned {
 				if cam, ok := p.Cameras[id]; ok && cam.MACAddress == "" {
 					cam.MACAddress = mac
@@ -174,6 +174,9 @@ func collectPrivacyCameras(ctx context.Context, streamMgr *StreamManager, pm pro
 			}
 			return nil
 		})
+		if err != nil {
+			fmt.Printf("[privacy] could not save the learned camera MAC addresses: %v\n", err)
+		}
 	}
 	var ps profile.PrivacySettings
 	if prof != nil {
@@ -470,7 +473,7 @@ func recordApplied(ctx context.Context, pm profile.ProfileManager, want []openwr
 		macs = append(macs, c.MAC)
 	}
 	now := time.Now().UTC()
-	_, _ = pm.Update(ctx, func(p *profile.Profile) error {
+	_, err := pm.Update(ctx, func(p *profile.Profile) error {
 		p.Privacy.AppliedCameras = macs
 		p.Privacy.BlockCloudVideo = profile.BoolPtr(len(macs) > 0)
 		p.Privacy.AppliedAt = now
@@ -485,13 +488,19 @@ func recordApplied(ctx context.Context, pm profile.ProfileManager, want []openwr
 		}
 		return nil
 	})
+	if err != nil {
+		fmt.Printf("[privacy] could not save the applied router state: %v\n", err)
+	}
 }
 
 func markRouterDisconnected(ctx context.Context, pm profile.ProfileManager) {
-	_, _ = pm.Update(ctx, func(p *profile.Profile) error {
+	_, err := pm.Update(ctx, func(p *profile.Profile) error {
 		p.Privacy.RouterConnected = false
 		return nil
 	})
+	if err != nil {
+		fmt.Printf("[privacy] could not save the router disconnected state: %v\n", err)
+	}
 }
 
 // privacyAutoSyncLoop keeps the router in line in the background: a camera
@@ -726,13 +735,16 @@ func handlePrivacyCamera(w http.ResponseWriter, r *http.Request, streamMgr *Stre
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "unknown_camera", "message": "That camera isn't set up in BombeCam."})
 		return
 	}
-	_, _ = pm.Update(r.Context(), func(p *profile.Profile) error {
+	_, err := pm.Update(r.Context(), func(p *profile.Profile) error {
 		if p.Privacy.Blocked == nil {
 			p.Privacy.Blocked = map[string]bool{}
 		}
 		p.Privacy.Blocked[req.CameraID] = *req.Blocked
 		return nil
 	})
+	if err != nil {
+		fmt.Printf("[privacy] could not save the camera blocking choice: %v\n", err)
+	}
 	respondAfterChange(w, r, streamMgr, pm)
 }
 
@@ -756,7 +768,7 @@ func handlePrivacyBlockAll(w http.ResponseWriter, r *http.Request, streamMgr *St
 
 func setAllBlocked(ctx context.Context, streamMgr *StreamManager, pm profile.ProfileManager, block bool) {
 	cams := collectPrivacyCameras(ctx, streamMgr, pm)
-	_, _ = pm.Update(ctx, func(p *profile.Profile) error {
+	_, err := pm.Update(ctx, func(p *profile.Profile) error {
 		p.Privacy.Blocked = map[string]bool{}
 		for _, c := range cams {
 			p.Privacy.Blocked[c.ID] = block
@@ -764,6 +776,9 @@ func setAllBlocked(ctx context.Context, streamMgr *StreamManager, pm profile.Pro
 		p.Privacy.BlockNewCameras = block
 		return nil
 	})
+	if err != nil {
+		fmt.Printf("[privacy] could not save the all-camera blocking choices: %v\n", err)
+	}
 }
 
 // respondAfterChange pushes the new choices to the router (when connected)
@@ -856,7 +871,7 @@ func connectRouter(ctx context.Context, streamMgr *StreamManager, pm profile.Pro
 	if res.ExitCode != 0 || !found || result.Status != "ok" {
 		return routerOutcome{Code: "router_script_failed", Message: routerFailureMessage(res.Output), Output: res.Output}, res
 	}
-	_, _ = pm.Update(ctx, func(p *profile.Profile) error {
+	_, err = pm.Update(ctx, func(p *profile.Profile) error {
 		if !sameRouter(p.Privacy.RouterAddress, addr) {
 			p.Privacy.AppliedCameras = nil // a different router: nothing known about it
 			p.Privacy.BlockCloudVideo = nil
@@ -872,6 +887,9 @@ func connectRouter(ctx context.Context, streamMgr *StreamManager, pm profile.Pro
 		p.RouterKey = profile.SecretString(ks.PEM())
 		return nil
 	})
+	if err != nil {
+		fmt.Printf("[privacy] could not save the router connection and key: %v\n", err)
+	}
 	fmt.Printf("[privacy] router %s connected (%s); BombeCam's key installed\n", addr, result.Firewall)
 	connectOutput := res.Output
 
@@ -1009,7 +1027,7 @@ func uninstallFromRouter(ctx context.Context, pm profile.ProfileManager) routerO
 // unblock, every camera is also set to not blocked (the router no longer has
 // rules); without it the choices are kept for the next router.
 func forgetRouter(ctx context.Context, pm profile.ProfileManager, unblock bool) {
-	_, _ = pm.Update(ctx, func(p *profile.Profile) error {
+	_, err := pm.Update(ctx, func(p *profile.Profile) error {
 		keep, last := p.Privacy.BlockStreamSetup, p.Privacy.LastRouterAddress
 		blocked, blockNew := p.Privacy.Blocked, p.Privacy.BlockNewCameras
 		p.Privacy = profile.PrivacySettings{BlockStreamSetup: keep, LastRouterAddress: last}
@@ -1019,6 +1037,9 @@ func forgetRouter(ctx context.Context, pm profile.ProfileManager, unblock bool) 
 		p.RouterKey = ""
 		return nil
 	})
+	if err != nil {
+		fmt.Printf("[privacy] could not save removal of the router settings and key: %v\n", err)
+	}
 }
 
 // handlePrivacyForgetRouter handles POST /api/v1/privacy/forget-router: after a

@@ -595,8 +595,10 @@ func main() {
 		setStreamManagerPorts(streamMgr, integ)
 	}
 	setCurrentStreamManager(streamMgr)
+	backgroundCtx, cancelBackground := context.WithCancel(context.Background())
+	defer cancelBackground()
 	// Keeps the router's camera list in line with the Firewall choices.
-	go privacyAutoSyncLoop(context.Background(), streamMgr)
+	go privacyAutoSyncLoop(backgroundCtx, streamMgr)
 
 	// The Osaio login pool: every stored login gets its own session, and each
 	// camera streams through the login it was added with. sessionMgr is only
@@ -629,7 +631,7 @@ func main() {
 	}
 	// NVR address, stream password, snapshots, MQTT (see integration_settings.go)
 	applyIntegrationRuntime(streamMgr, integ)
-	go runIntegrationLoop(context.Background(), streamMgr)
+	go runIntegrationLoop(backgroundCtx, streamMgr)
 
 	sigProvider := func(cameraUUID string) (*bridge.Signaling, error) {
 		if streamMgr != nil {
@@ -750,6 +752,7 @@ func main() {
 			fmt.Println("shutting down gateway (Shut down pressed)...")
 		}
 	})
+	cancelBackground()
 	streamMgr.CloseAll()
 	if mtxSupervisor != nil {
 		if err := mtxSupervisor.Stop(); err != nil {

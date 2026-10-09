@@ -657,7 +657,7 @@ func handleCameraEnroll(w http.ResponseWriter, r *http.Request, sessionMgr *Sess
 			devMap[d.UUID] = d
 		}
 
-		_, _ = pm.Update(ctx, func(p *profile.Profile) error {
+		_, err := pm.Update(ctx, func(p *profile.Profile) error {
 			if p.Cameras == nil {
 				p.Cameras = make(map[string]profile.CameraProfile)
 			}
@@ -688,6 +688,9 @@ func handleCameraEnroll(w http.ResponseWriter, r *http.Request, sessionMgr *Sess
 			}
 			return nil
 		})
+		if err != nil {
+			fmt.Printf("[profile] could not save the enrolled cameras: %v\n", err)
+		}
 	}
 
 	if pm != nil {

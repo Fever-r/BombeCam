@@ -51,6 +51,9 @@ type haBridgeState struct {
 
 var haMQTT = &haBridgeState{}
 
+// Slots are held through the post-command state refresh; this is a flood guard, not a throttle.
+var mqttCommandSlots = make(chan struct{}, 32)
+
 // mqttNewClient is a seam for tests.
 var mqttNewClient = mqtt.NewClient
 
@@ -211,7 +214,16 @@ func (b *haBridgeState) onConnect(c mqtt.Client) {
 	fmt.Printf("[mqtt] connected; cameras are announced to Home Assistant under %s/\n", prefix)
 	c.Publish(mqttStatusTopic, 1, true, "online")
 	c.Subscribe(mqttBaseTopic+"/+/+/set", 1, func(_ mqtt.Client, m mqtt.Message) {
-		go b.handleCommand(m.Topic(), string(m.Payload()))
+		select {
+		case mqttCommandSlots <- struct{}{}:
+			topic, payload := m.Topic(), string(m.Payload())
+			go func() {
+				defer func() { <-mqttCommandSlots }()
+				b.handleCommand(topic, payload)
+			}()
+		default:
+			fmt.Printf("[mqtt] command handlers busy; dropping message on %s\n", m.Topic())
+		}
 	})
 	// Home Assistant says "online" here when it (re)starts: announce again.
 	c.Subscribe(prefix+"/status", 1, func(_ mqtt.Client, m mqtt.Message) {

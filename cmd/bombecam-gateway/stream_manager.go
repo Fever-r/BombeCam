@@ -1339,13 +1339,16 @@ func (sm *StreamManager) streamOnce(ctx context.Context, mc *ManagedCamera, c *b
 				if pm.GetProfile() == nil {
 					return
 				}
-				_, _ = pm.Update(context.Background(), func(p *profile.Profile) error {
+				_, err := pm.Update(context.Background(), func(p *profile.Profile) error {
 					if cam, ok := p.Cameras[camUUID]; ok {
 						cam.IPAddress = ipStr
 						p.Cameras[camUUID] = cam
 					}
 					return nil
 				})
+				if err != nil {
+					fmt.Printf("[%s] could not save the camera's LAN address: %v\n", dev.Name, err)
+				}
 			}(dev.UUID)
 		}
 	}

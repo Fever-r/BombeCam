@@ -204,7 +204,7 @@ func handleCameraAdd(w http.ResponseWriter, r *http.Request, streamMgr *StreamMa
 	}
 
 	if pm != nil {
-		_, _ = pm.Update(r.Context(), func(p *profile.Profile) error {
+		_, err := pm.Update(r.Context(), func(p *profile.Profile) error {
 			if p.Cameras == nil {
 				p.Cameras = make(map[string]profile.CameraProfile)
 			}
@@ -228,6 +228,9 @@ func handleCameraAdd(w http.ResponseWriter, r *http.Request, streamMgr *StreamMa
 			}
 			return nil
 		})
+		if err != nil {
+			fmt.Printf("[profile] could not save the added cameras: %v\n", err)
+		}
 	}
 
 	if pm != nil {
@@ -272,10 +275,13 @@ func handleCameraRemove(w http.ResponseWriter, r *http.Request, camID string, st
 	wasEnrolled := streamMgr.Unenroll(camID)
 	if pm != nil {
 		_ = pm.UnenrollCamera(r.Context(), camID)
-		_, _ = pm.Update(r.Context(), func(p *profile.Profile) error {
+		_, err := pm.Update(r.Context(), func(p *profile.Profile) error {
 			delete(p.Privacy.Blocked, camID)
 			return nil
 		})
+		if err != nil {
+			fmt.Printf("[privacy] could not save removal of the camera blocking choice: %v\n", err)
+		}
 	}
 
 	note := "BombeCam did not change this camera's internet access."
