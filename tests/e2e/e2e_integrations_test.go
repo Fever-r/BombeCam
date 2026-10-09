@@ -602,6 +602,28 @@ func TestE2E_Combo_BlockCloudVideoToggle_IntegrationConsistency(t *testing.T) {
 		}
 		return strings.Join(parts, ",")
 	}
+	// HTTP readiness precedes restoration of the seeded cameras into the
+	// StreamManager. Wait for both before recording the URL baseline.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		code, s := h.GetStreams(false)
+		present := map[string]bool{}
+		if code == http.StatusOK {
+			streams, _ := s["streams"].([]any)
+			for _, e := range streams {
+				stream, _ := e.(map[string]any)
+				uuid, _ := stream["uuid"].(string)
+				present[uuid] = true
+			}
+		}
+		if present["cam-001"] && present["cam-002"] {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("seeded streams not restored within 10s: status=%d response=%+v", code, s)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 	before := urls()
 	if before == "" {
 		t.Fatal("no streams listed")
