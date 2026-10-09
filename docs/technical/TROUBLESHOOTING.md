@@ -41,6 +41,15 @@ The log never contains the server key, the app ID or passwords, so it is safe to
 | Controls answer **control transport unavailable** or *no active signaling connection* | Controls travel over the camera's live session, which needs a working cloud sign-in | Fix sign-in first; controls return when the camera streams again. |
 | Everything worked, a new key is set, sign-in still fails | The vendor changed more than the key: its app ID, app version or message format | A new app ID needs no code change: paste it under **Settings → App ID**; it works at once. A new app version or message format needs a code change. See [MAINTAINERS.md](MAINTAINERS.md#when-the-vendor-changes-something). |
 
+## Video, controls and saved settings
+
+| Log message | Meaning and what to do |
+|---|---|
+| `[video] no keyframe recognised in 10 s` | Video fragments arrived but no usable keyframe was recognized. Report the camera model, BombeCam version and this diagnostic line (FU start types, SPS status and slice types). It is not proof of a sign-in problem. |
+| `PTZ stop exhausted` / `camera may still be moving` | All three stop attempts failed. Check the camera and stop it through the Osaio app if needed. Restore the control connection before trying again; do not assume motion has stopped. |
+| `[mqtt] command handlers busy; dropping message` | All 32 Home Assistant command slots are occupied. Reduce command bursts and resend a needed command after the backlog clears; a dropped command was not executed. |
+| `could not save` | A profile change was not saved. Check the accompanying error, available disk space and data-folder permissions. Some pages may still report success; do not rely on the change surviving a restart until saving succeeds. |
+
 ## What a key or app ID problem does not affect
 
 - Router rules for **Block cloud video** stay in force. A missing or rejected key or app ID never removes or loosens them.

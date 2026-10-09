@@ -1,14 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.0.1-beta.1
+
+Optional test release; not yet verified on a real P5 camera. Stable 1.0.0 remains available.
 
 **Gateway**
-- Video now plays from cameras that mark keyframes differently from the WS03: the GNCC P5 (`GP5_T6S8A3`) is recognized directly, and for other unfamiliar cameras keyframes are recognized from the video itself. If no keyframe arrives within 10 seconds, the log names what the camera sent. Diagnosis by @RuggeroCapo (#2).
-- Pan/tilt: if the stop at the end of a move doesn't reach the camera, BombeCam tries twice more and logs each failure, so one lost message no longer leaves the camera turning. A Stop you press is retried the same way.
+- Recognizes the keyframe fragment type reported for the GNCC P5 (`GP5_T6S8A3`), and checks the video slice header for other unfamiliar fragment types. This is intended to fix video received but never displayed; P5 hardware testing is requested. If no keyframe is recognized within 10 seconds, the log names what the camera sent. Diagnosis by @RuggeroCapo (#2).
+- Pan/tilt: if the stop at the end of a move fails, BombeCam tries twice more and logs each failure. A Stop you press is retried the same way; if all attempts fail, the camera may still be moving.
 - Settings that fail to save are now logged instead of being ignored, and background tasks stop at shutdown. Home Assistant MQTT commands are handled at most 32 at a time; extra messages during a flood are dropped and logged.
 
 **Documentation**
 - Issue forms for bug reports and Osaio app or server changes, matching CONTRIBUTING.md.
+- Troubleshooting guidance for keyframe diagnostics, failed PTZ stops, MQTT overload and failed settings saves.
+
+**Tests**
+- End-to-end tests wait for saved cameras to be restored before reading their stream URLs.
 
 ## 1.0.0 — first public release
 
