@@ -1,0 +1,43 @@
+name: Bug report
+description: Anything else that does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove email addresses and camera names. **Never post a password, token or device ID.**
+        If the problem is about setting the server key, the app ID or other settings, or about the cloud client, session signaling, or the local control path, say so in the title; a maintainer will apply the `config` or `transport` label.
+  - type: input
+    id: version
+    attributes:
+      label: BombeCam version
+      description: Run `bombecam-gateway -version`.
+    validations:
+      required: true
+  - type: input
+    id: camera
+    attributes:
+      label: Camera model code and Osaio region
+      description: Model code from the Cameras tab (e.g. WS03, GP5_T6S8A3) and your account's country.
+  - type: input
+    id: transport
+    attributes:
+      label: Transport / publisher (if relevant)
+      description: Control transport (cloud or mqtt), publisher (native or ffmpeg), or Direct (LAN) / Relayed via Osaio.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant gateway.log lines
+      render: text

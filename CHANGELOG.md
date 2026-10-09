@@ -7,6 +7,9 @@
 - Pan/tilt: if the stop at the end of a move doesn't reach the camera, BombeCam tries twice more and logs each failure, so one lost message no longer leaves the camera turning. A Stop you press is retried the same way.
 - Settings that fail to save are now logged instead of being ignored, and background tasks stop at shutdown. Home Assistant MQTT commands are handled at most 32 at a time; extra messages during a flood are dropped and logged.
 
+**Documentation**
+- Issue forms for bug reports and Osaio app or server changes, matching CONTRIBUTING.md.
+
 ## 1.0.0 — first public release
 
 **Gateway**

@@ -1,0 +1,39 @@
+name: Osaio vendor change
+description: Sign-in, live view or controls broke after an Osaio app or server update.
+labels: [vendor-change]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove email addresses and camera names. **Never post a password, token or device ID.**
+        If Osaio changed its server key or app ID and you found a new one that works, say so in this issue.
+  - type: input
+    id: version
+    attributes:
+      label: BombeCam version
+      description: Run `bombecam-gateway -version`.
+    validations:
+      required: true
+  - type: input
+    id: update
+    attributes:
+      label: Osaio app or server update
+      description: When did it start failing? Include the Osaio app version and region if known.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: Describe the sign-in, live view or controls that broke, or say if you found a new server key or app ID that works.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant gateway.log lines
+      render: text
