@@ -4,6 +4,7 @@
 
 **Gateway**
 - Video now plays from cameras that mark keyframes differently from the WS03: the GNCC P5 (`GP5_T6S8A3`) is recognized directly, and for other unfamiliar cameras keyframes are recognized from the video itself. If no keyframe arrives within 10 seconds, the log names what the camera sent. Diagnosis by @RuggeroCapo (#2).
+- Pan/tilt: if the stop at the end of a move doesn't reach the camera, BombeCam tries twice more and logs each failure, so one lost message no longer leaves the camera turning. A Stop you press is retried the same way.
 
 ## 1.0.0 — first public release
 

@@ -18,6 +18,8 @@ type SignalingControlChannel struct {
 	stopCh    chan struct{}
 	closed    bool
 	ptzCancel map[string]chan struct{}
+	ptzLatest map[string]chan struct{}  // retained after timer expiry to detect newer moves
+	ptzSend   func(direction int) error // optional PTZ transport override for tests
 }
 
 // Ensure SignalingControlChannel implements ControlChannel interface at compile time.
@@ -29,6 +31,7 @@ func NewSignalingControlChannel(sig *Signaling) *SignalingControlChannel {
 		sig:       sig,
 		stopCh:    make(chan struct{}),
 		ptzCancel: make(map[string]chan struct{}),
+		ptzLatest: make(map[string]chan struct{}),
 	}
 }
 
@@ -38,6 +41,7 @@ func NewSignalingControlChannelWithProvider(provider SignalingProvider) *Signali
 		provider:  provider,
 		stopCh:    make(chan struct{}),
 		ptzCancel: make(map[string]chan struct{}),
+		ptzLatest: make(map[string]chan struct{}),
 	}
 }
 
@@ -80,15 +84,37 @@ func (s *SignalingControlChannel) MovePTZ(ctx context.Context, cameraUUID string
 		delete(s.ptzCancel, cameraUUID)
 	}
 
+	owner := make(chan struct{})
+	s.ptzLatest[cameraUUID] = owner
 	var cancelCh chan struct{}
 	if direction != 0 && durationMs > 0 {
-		cancelCh = make(chan struct{})
+		cancelCh = owner
 		s.ptzCancel[cameraUUID] = cancelCh
 	}
 	stopCh := s.stopCh
+	send := s.ptzSend
+	if send == nil {
+		send = func(direction int) error {
+			return sig.Send("service.MovePTZ", map[string]any{"direction": direction})
+		}
+	}
 	s.mu.Unlock()
 
-	if err := sig.Send("service.MovePTZ", map[string]any{"direction": direction}); err != nil {
+	if direction == 0 {
+		err := retryPTZStop("signaling-control", cameraUUID, func() bool {
+			s.mu.RLock()
+			defer s.mu.RUnlock()
+			return !s.closed && s.ptzLatest[cameraUUID] == owner
+		}, func() error {
+			return send(0)
+		}, ptzStopRetryDelays)
+		if err != nil {
+			return fmt.Errorf("stop ptz failed: %w", err)
+		}
+		return nil
+	}
+
+	if err := send(direction); err != nil {
 		if cancelCh != nil {
 			s.mu.Lock()
 			if s.ptzCancel[cameraUUID] == cancelCh {
@@ -115,11 +141,20 @@ func (s *SignalingControlChannel) MovePTZ(ctx context.Context, cameraUUID string
 			select {
 			case <-timer.C:
 				s.mu.Lock()
-				if !s.closed && s.ptzCancel[cameraUUID] == ch {
+				stop := !s.closed && s.ptzCancel[cameraUUID] == ch
+				if stop {
 					delete(s.ptzCancel, cameraUUID)
-					_ = sig.Send("service.MovePTZ", map[string]any{"direction": 0})
 				}
 				s.mu.Unlock()
+				if stop {
+					retryPTZStop("signaling-control", cameraUUID, func() bool {
+						s.mu.RLock()
+						defer s.mu.RUnlock()
+						return !s.closed && s.ptzLatest[cameraUUID] == ch
+					}, func() error {
+						return send(0)
+					}, ptzStopRetryDelays)
+				}
 			case <-ch:
 				return
 			case <-stopCh:

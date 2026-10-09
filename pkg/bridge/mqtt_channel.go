@@ -41,6 +41,8 @@ type MQTTControlChannel struct {
 	stopCh          chan struct{}
 	closed          bool
 	ptzCancel       map[string]chan struct{}
+	ptzLatest       map[string]chan struct{}                            // retained after timer expiry to detect newer moves
+	ptzDispatch     func(context.Context, string, map[string]any) error // optional PTZ transport override for tests
 }
 
 // Ensure MQTTControlChannel implements ControlChannel interface at compile time.
@@ -67,6 +69,7 @@ func NewMQTTControlChannel(daemon *shadowshim.ShadowShimDaemon, timeout time.Dur
 		ownsDaemon:      owns,
 		stopCh:          make(chan struct{}),
 		ptzCancel:       make(map[string]chan struct{}),
+		ptzLatest:       make(map[string]chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -112,14 +115,34 @@ func (m *MQTTControlChannel) MovePTZ(ctx context.Context, cameraUUID string, dir
 		durationMs = 250
 	}
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return fmt.Errorf("local control channel is closed")
+	}
 	if prev := m.ptzCancel[cameraUUID]; prev != nil {
 		close(prev)
 		delete(m.ptzCancel, cameraUUID)
 	}
 	d, timeout, require, stopCh := m.daemon, m.timeout, m.requireReadback, m.stopCh
+	dispatch := m.ptzDispatch
+	if dispatch == nil {
+		dispatch = d.DispatchDesired
+	}
 	cancelCh := make(chan struct{})
 	m.ptzCancel[cameraUUID] = cancelCh
+	m.ptzLatest[cameraUUID] = cancelCh
 	m.mu.Unlock()
+	stop := func() {
+		retryPTZStop("local-control", cameraUUID, func() bool {
+			m.mu.RLock()
+			defer m.mu.RUnlock()
+			return !m.closed && m.ptzLatest[cameraUUID] == cancelCh
+		}, func() error {
+			stopCtx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			return dispatch(stopCtx, cameraUUID, map[string]any{"direction": 0})
+		}, ptzStopRetryDelays)
+	}
 	if direction != 0 {
 		go func() {
 			timer := time.NewTimer(time.Duration(durationMs) * time.Millisecond)
@@ -127,11 +150,14 @@ func (m *MQTTControlChannel) MovePTZ(ctx context.Context, cameraUUID string, dir
 			select {
 			case <-timer.C:
 				m.mu.Lock()
-				if !m.closed && m.ptzCancel[cameraUUID] == cancelCh {
+				current := !m.closed && m.ptzCancel[cameraUUID] == cancelCh
+				if current {
 					delete(m.ptzCancel, cameraUUID)
-					_ = d.DispatchDesired(context.Background(), cameraUUID, map[string]any{"direction": 0})
 				}
 				m.mu.Unlock()
+				if current {
+					stop()
+				}
 			case <-cancelCh:
 			case <-stopCh:
 			}
@@ -142,16 +168,19 @@ func (m *MQTTControlChannel) MovePTZ(ctx context.Context, cameraUUID string, dir
 	if require {
 		_, err = d.DispatchAndConfirm(ctx, cameraUUID, desired, desired, timeout)
 	} else {
-		err = d.DispatchDesired(ctx, cameraUUID, desired)
+		err = dispatch(ctx, cameraUUID, desired)
 	}
 	if err != nil {
 		m.mu.Lock()
-		if m.ptzCancel[cameraUUID] == cancelCh {
+		current := !m.closed && m.ptzCancel[cameraUUID] == cancelCh
+		if current {
 			close(cancelCh)
 			delete(m.ptzCancel, cameraUUID)
-			_ = d.DispatchDesired(context.Background(), cameraUUID, map[string]any{"direction": 0})
 		}
 		m.mu.Unlock()
+		if current {
+			stop()
+		}
 		return fmt.Errorf("local PTZ unconfirmed: %w", err)
 	}
 	return nil
