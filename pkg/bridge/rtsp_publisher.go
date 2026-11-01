@@ -33,6 +33,8 @@ type rtspPublisher struct {
 	readErr error
 
 	video     codecs.H264Payloader
+	videoH265 codecs.H265Payloader
+	hevc      bool
 	videoSeq  uint16
 	videoSSRC uint32
 
@@ -105,6 +107,20 @@ func splitADTS(b []byte) [][]byte {
 // dialRTSPPublisher connects to rtspURL and starts a RECORD session.
 // sps/pps are advertised in the SDP; audio may be nil for video-only.
 func dialRTSPPublisher(ctx context.Context, rtspURL string, sps, pps []byte, audio *aacConfig, withG711 ...bool) (*rtspPublisher, error) {
+	return dialRTSPPublisherWithHEVC(ctx, rtspURL, sps, pps, nil, audio, withG711...)
+}
+
+type hevcParameterSets struct {
+	vps []byte
+	sps []byte
+	pps []byte
+}
+
+func dialRTSPPublisherHEVC(ctx context.Context, rtspURL string, vps, sps, pps []byte, audio *aacConfig, withG711 ...bool) (*rtspPublisher, error) {
+	return dialRTSPPublisherWithHEVC(ctx, rtspURL, nil, nil, &hevcParameterSets{vps: vps, sps: sps, pps: pps}, audio, withG711...)
+}
+
+func dialRTSPPublisherWithHEVC(ctx context.Context, rtspURL string, sps, pps []byte, hevc *hevcParameterSets, audio *aacConfig, withG711 ...bool) (*rtspPublisher, error) {
 	g711 := audio != nil && len(withG711) > 0 && withG711[0]
 	u, err := url.Parse(rtspURL)
 	if err != nil || u.Scheme != "rtsp" {
@@ -130,6 +146,7 @@ func dialRTSPPublisher(ctx context.Context, rtspURL string, sps, pps []byte, aud
 		g711Seq:    uint16(rand.Intn(65535)),
 		g711SSRC:   rand.Uint32(),
 		writeLimit: 5 * time.Second,
+		hevc:       hevc != nil,
 	}
 	p.video.DisableStapA = true
 	br := bufio.NewReader(conn)
@@ -154,7 +171,12 @@ func dialRTSPPublisher(ctx context.Context, rtspURL string, sps, pps []byte, aud
 		return readRTSPResponse(br, method)
 	}
 
-	sdp := buildPublishSDP(sps, pps, audio, g711)
+	var sdp string
+	if hevc == nil {
+		sdp = buildPublishSDP(sps, pps, audio, g711)
+	} else {
+		sdp = buildPublishSDPHEVC(hevc.vps, hevc.sps, hevc.pps, audio, g711)
+	}
 	if _, err := request("ANNOUNCE", base, map[string]string{"Content-Type": "application/sdp"}, []byte(sdp)); err != nil {
 		conn.Close()
 		return nil, err
@@ -212,6 +234,27 @@ func buildPublishSDP(sps, pps []byte, audio *aacConfig, g711 bool) string {
 		fmtp += ";sprop-parameter-sets=" + base64.StdEncoding.EncodeToString(sps) + "," + base64.StdEncoding.EncodeToString(pps)
 	}
 	sb.WriteString("a=fmtp:96 " + fmtp + "\r\na=control:trackID=0\r\n")
+	if audio != nil {
+		fmt.Fprintf(&sb, "m=audio 0 RTP/AVP 97\r\na=rtpmap:97 mpeg4-generic/%d/%d\r\n", audio.SampleRate, audio.Channels)
+		fmt.Fprintf(&sb, "a=fmtp:97 profile-level-id=1;mode=AAC-hbr;sizelength=13;indexlength=3;indexdeltalength=3;config=%s\r\n",
+			strings.ToUpper(hex.EncodeToString(audio.audioSpecificConfig())))
+		sb.WriteString("a=control:trackID=1\r\n")
+	}
+	if audio != nil && g711 {
+		sb.WriteString("m=audio 0 RTP/AVP 0\r\na=rtpmap:0 PCMU/8000\r\na=control:trackID=2\r\n")
+	}
+	return sb.String()
+}
+
+func buildPublishSDPHEVC(vps, sps, pps []byte, audio *aacConfig, g711 bool) string {
+	var sb strings.Builder
+	sb.WriteString("v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=BombeCam\r\nc=IN IP4 0.0.0.0\r\nt=0 0\r\n")
+	sb.WriteString("m=video 0 RTP/AVP 96\r\na=rtpmap:96 H265/90000\r\n")
+	if len(vps) > 0 && len(sps) > 0 && len(pps) > 0 {
+		fmt.Fprintf(&sb, "a=fmtp:96 sprop-vps=%s;sprop-sps=%s;sprop-pps=%s\r\n",
+			base64.StdEncoding.EncodeToString(vps), base64.StdEncoding.EncodeToString(sps), base64.StdEncoding.EncodeToString(pps))
+	}
+	sb.WriteString("a=control:trackID=0\r\n")
 	if audio != nil {
 		fmt.Fprintf(&sb, "m=audio 0 RTP/AVP 97\r\na=rtpmap:97 mpeg4-generic/%d/%d\r\n", audio.SampleRate, audio.Channels)
 		fmt.Fprintf(&sb, "a=fmtp:97 profile-level-id=1;mode=AAC-hbr;sizelength=13;indexlength=3;indexdeltalength=3;config=%s\r\n",
@@ -317,6 +360,28 @@ func (p *rtspPublisher) WriteH264(nalus [][]byte, ts uint32) error {
 			continue
 		}
 		for _, pl := range p.video.Payload(1400, n) {
+			p.videoSeq++
+			pkts = append(pkts, &rtp.Packet{
+				Header:  rtp.Header{Version: 2, PayloadType: 96, SequenceNumber: p.videoSeq, Timestamp: ts, SSRC: p.videoSSRC},
+				Payload: pl,
+			})
+		}
+	}
+	if len(pkts) == 0 {
+		return nil
+	}
+	pkts[len(pkts)-1].Marker = true
+	return p.writeInterleaved(0, pkts)
+}
+
+// WriteH265 publishes one HEVC access unit with a 90 kHz timestamp.
+func (p *rtspPublisher) WriteH265(nalus [][]byte, ts uint32) error {
+	var pkts []*rtp.Packet
+	for _, n := range nalus {
+		if len(n) < 2 {
+			continue
+		}
+		for _, pl := range p.videoH265.Payload(1400, n) {
 			p.videoSeq++
 			pkts = append(pkts, &rtp.Packet{
 				Header:  rtp.Header{Version: 2, PayloadType: 96, SequenceNumber: p.videoSeq, Timestamp: ts, SSRC: p.videoSSRC},

@@ -44,14 +44,20 @@ type nativeSink struct {
 	dialErr  string
 	start    time.Time
 
-	asm      *nalAssembler
-	haveAU   bool
-	auTS     uint32
-	auWall   time.Time
-	auNALs   [][]byte
-	sps, pps []byte
-	sawIDR   bool
-	firstPkt time.Time
+	asm            *nalAssembler
+	hevcAsm        *hevcNALAssembler
+	videoHEVC      bool
+	pendingVPS     []byte // tentative type-32 NAL, committed if HEVC SPS/PPS confirms the format
+	haveAU         bool
+	auTS           uint32
+	auWall         time.Time
+	auNALs         [][]byte
+	vps            []byte
+	sps, pps       []byte
+	sawIDR         bool
+	firstPkt       time.Time
+	videoDiag      videoPacketDiagnostics
+	hevcTranscoder *hevcTranscoder
 
 	// late packets from an access unit that was already flushed
 	haveLastAU  bool
@@ -236,6 +242,7 @@ func newNativeSink(rtspURL, label string, wantAudio bool, transcoderPath ...stri
 		s.transcoderPath = transcoderPath[0]
 	}
 	s.asm = newNALAssembler(func(n []byte) { s.auNALs = append(s.auNALs, n) })
+	s.hevcAsm = newHEVCNALAssembler(func(n []byte) { s.auNALs = append(s.auNALs, n) })
 	return s
 }
 
@@ -263,6 +270,40 @@ func (s *nativeSink) OnVideoPacket(payload []byte, ts uint32, marker bool) {
 		return
 	}
 	now := s.now()
+	s.videoDiag.recordRTPPayload(payload, now)
+	if !s.videoHEVC && hevcRTPType(payload) == 32 {
+		s.pendingVPS = append(s.pendingVPS[:0], payload...)
+	}
+	if !s.videoHEVC && isHEVCParameterSet(payload) {
+		// The legacy firmware sends H.264 NALs inside the vendor's H.265
+		// signaling profile. Firmware that sends real HEVC includes HEVC SPS/PPS
+		// NAL types 33/34; switch formats before handing those packets to the H.264
+		// assembler. Any partial legacy access unit is intentionally discarded.
+		s.videoHEVC = true
+		s.auNALs = nil
+		s.haveAU, s.haveLastAU = false, false
+		s.oldPktRun = 0
+		s.vps, s.sps, s.pps = append([]byte(nil), s.pendingVPS...), nil, nil
+		s.pendingVPS = nil
+		s.spsInfo, s.haveInfo = h264SPS{}, false
+		if s.pub != nil {
+			s.setPubLocked(nil)
+		}
+		if s.vpub != nil {
+			s.vpub.Close()
+			s.vpub = nil
+		}
+		s.vpubSawIDR = false
+		fmt.Printf("[%s] [publish] detected native HEVC NAL units; publishing HEVC to MediaMTX\n", s.label)
+		if s.transcoderPath != "" {
+			transcoder, err := startHEVCTranscoder(s.transcoderPath, s.label, s.rtspURL, s.wantAudio)
+			if err != nil {
+				fmt.Printf("[%s] [publish] HEVC transcoder unavailable; falling back to native HEVC: %v\n", s.label, err)
+			} else {
+				s.hevcTranscoder = transcoder
+			}
+		}
+	}
 	if s.firstPkt.IsZero() {
 		s.firstPkt = now
 	}
@@ -279,12 +320,17 @@ func (s *nativeSink) OnVideoPacket(payload []byte, ts uint32, marker bool) {
 		if back > 0 && back <= maxStragglerAge && s.oldPktRun < 30 {
 			s.oldPktRun++
 			s.droppedLate++
+			s.logVideoDiagnosticsLocked(now)
 			return
 		}
 	}
 	s.oldPktRun = 0
 	if s.haveAU && ts != s.auTS {
-		s.asm.Flush()
+		if s.videoHEVC {
+			s.hevcAsm.Flush()
+		} else {
+			s.asm.Flush()
+		}
 		s.flushAULocked()
 	}
 	if !s.haveAU {
@@ -292,7 +338,12 @@ func (s *nativeSink) OnVideoPacket(payload []byte, ts uint32, marker bool) {
 		s.auTS = ts
 		s.auWall = now
 	}
-	s.asm.Push(payload)
+	if s.videoHEVC {
+		s.hevcAsm.Push(payload)
+	} else {
+		s.asm.Push(payload)
+	}
+	s.logVideoDiagnosticsLocked(now)
 }
 
 func (s *nativeSink) flushAULocked() {
@@ -304,30 +355,60 @@ func (s *nativeSink) flushAULocked() {
 	if len(nals) == 0 {
 		return
 	}
-	hasIDR, hasSPS := false, false
+	hasIDR, hasSPS, hasPPS, hasVPS := false, false, false, false
 	for _, n := range nals {
-		switch h264NALType(n) {
-		case 7:
-			if s.sps == nil || string(s.sps) != string(n) {
-				s.noteSPSLocked(n)
-			}
-			s.sps = n
-			hasSPS = true
-		case 8:
-			s.pps = n
-		case 5:
-			hasIDR = true
+		nalType := h264NALType(n)
+		if s.videoHEVC {
+			nalType = hevcNALType(n)
 		}
+		s.videoDiag.recordNALType(nalType)
+		if s.videoHEVC {
+			switch nalType {
+			case 32:
+				s.vps, hasVPS = n, true
+			case 33:
+				s.sps, hasSPS = n, true
+			case 34:
+				s.pps, hasPPS = n, true
+			case 16, 17, 18, 19, 20, 21:
+				hasIDR = true
+			}
+		} else {
+			switch nalType {
+			case 7:
+				if s.sps == nil || string(s.sps) != string(n) {
+					if err := s.noteSPSLocked(n); err != nil {
+						s.videoDiag.recordSPSParseError(err)
+					}
+				}
+				s.sps, hasSPS = n, true
+			case 8:
+				s.pps, hasPPS = n, true
+			case 5:
+				hasIDR = true
+			}
+		}
+	}
+	if hasIDR {
+		s.videoDiag.idrAccessUnits++
 	}
 	s.countFrameLocked(auWall)
 	if s.auHook != nil {
 		s.auHook(auTS, nals)
 	}
-	if !s.ensurePublisherLocked() {
+	if s.videoHEVC && hasIDR && (!hasVPS || !hasSPS || !hasPPS) && s.vps != nil && s.sps != nil && s.pps != nil {
+		nals = append([][]byte{s.vps, s.sps, s.pps}, nals...)
+	} else if !s.videoHEVC && hasIDR && (!hasSPS || !hasPPS) && s.sps != nil && s.pps != nil {
+		nals = append([][]byte{s.sps, s.pps}, nals...)
+	}
+	if s.hevcTranscoder != nil {
+		if err := s.hevcTranscoder.WriteVideo(nals); err != nil {
+			fmt.Printf("[%s] [publish] HEVC transcode input failed: %v\n", s.label, err)
+		}
 		return
 	}
-	if hasIDR && !hasSPS && s.sps != nil && s.pps != nil {
-		nals = append([][]byte{s.sps, s.pps}, nals...)
+	if !s.ensurePublisherLocked() {
+		return
 	}
 	v := s.videoTSLocked(auTS, auWall)
 	s.noteSROffsetLocked(0, auTS, s.ticksToTime(v, videoClock))
@@ -340,10 +421,10 @@ func (s *nativeSink) flushAULocked() {
 }
 
 // noteSPSLocked records (and logs once per change) what the camera sends.
-func (s *nativeSink) noteSPSLocked(nal []byte) {
+func (s *nativeSink) noteSPSLocked(nal []byte) error {
 	info, err := parseH264SPS(nal)
 	if err != nil {
-		return
+		return err
 	}
 	s.spsInfo, s.haveInfo = info, true
 	extra := ""
@@ -352,6 +433,25 @@ func (s *nativeSink) noteSPSLocked(nal []byte) {
 	}
 	fmt.Printf("[%s] [publish] video: H.264 %s %s, %dx%d, POC type %d%s\n",
 		s.label, info.profileName(), info.levelName(), info.Width, info.Height, info.POCType, extra)
+	return nil
+}
+
+// logVideoDiagnosticsLocked emits at most three five-second summaries for a
+// stream. It records packet/NAL metadata only, never media payload bytes.
+func (s *nativeSink) logVideoDiagnosticsLocked(now time.Time) {
+	if !s.videoDiag.windowReady(now) {
+		return
+	}
+	fmt.Printf("[%s] [publish-debug] video input: %s; codec=%s SPS=%v PPS=%v VPS=%v IDR access units=%d publisher=%v\n",
+		s.label, s.videoDiag.summary(), s.videoCodecName(), s.sps != nil, s.pps != nil, s.vps != nil, s.videoDiag.idrAccessUnits, s.pub != nil || s.hevcTranscoder != nil)
+	s.videoDiag.resetWindow(now)
+}
+
+func (s *nativeSink) videoCodecName() string {
+	if s.videoHEVC {
+		return "HEVC"
+	}
+	return "H264-compatible"
 }
 
 // countFrameLocked measures the real frame rate over 10-second windows.
@@ -398,7 +498,13 @@ func (s *nativeSink) writeVideoLocked(nals [][]byte, idr bool, ts uint32) {
 		s.sawIDR = true
 	}
 	ts = s.guardLocked(trackVideo, ts)
-	if err := s.pub.WriteH264(nals, ts); err != nil {
+	var err error
+	if s.videoHEVC {
+		err = s.pub.WriteH265(nals, ts)
+	} else {
+		err = s.pub.WriteH264(nals, ts)
+	}
+	if err != nil {
 		fmt.Printf("[%s] [publish] RTSP write failed (%v); reconnecting\n", s.label, err)
 		s.setPubLocked(nil)
 		return
@@ -452,7 +558,7 @@ func (s *nativeSink) ensurePublisherLocked() bool {
 			return true
 		}
 	}
-	if s.sps == nil || s.pps == nil {
+	if s.sps == nil || s.pps == nil || (s.videoHEVC && s.vps == nil) {
 		return false
 	}
 	// Give the audio track a moment to appear so it can be announced too.
@@ -470,7 +576,13 @@ func (s *nativeSink) ensurePublisherLocked() bool {
 		audio = s.audioCfg
 	}
 	withG711 := audio != nil && s.transcoderPath != ""
-	pub, err := dialRTSPPublisher(ctx, s.rtspURL, s.sps, s.pps, audio, withG711)
+	var pub *rtspPublisher
+	var err error
+	if s.videoHEVC {
+		pub, err = dialRTSPPublisherHEVC(ctx, s.rtspURL, s.vps, s.sps, s.pps, audio, withG711)
+	} else {
+		pub, err = dialRTSPPublisher(ctx, s.rtspURL, s.sps, s.pps, audio, withG711)
+	}
 	if err != nil {
 		msg := err.Error()
 		if msg != s.dialErr {
@@ -601,6 +713,12 @@ func (s *nativeSink) onAudio(payload []byte, rtpTS uint32, haveRTP bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || !s.wantAudio {
+		return
+	}
+	if s.hevcTranscoder != nil {
+		if err := s.hevcTranscoder.WriteAudio(payload); err != nil {
+			fmt.Printf("[%s] [publish] HEVC transcode audio input failed: %v\n", s.label, err)
+		}
 		return
 	}
 	if s.audioCfg == nil {
@@ -1122,6 +1240,10 @@ func (s *nativeSink) Close() {
 		s.vpub.Close()
 		s.vpub = nil
 	}
+	if s.hevcTranscoder != nil {
+		s.hevcTranscoder.Close()
+		s.hevcTranscoder = nil
+	}
 	s.setPubLocked(nil)
 	select {
 	case s.wake <- struct{}{}:
@@ -1157,22 +1279,34 @@ func (s *nativeSink) writeViewerCopyLocked(nals [][]byte, idr bool, ts uint32) {
 		s.vpubSawIDR = true
 	}
 	out, _ := s.vpubGuard.next(ts)
-	if err := s.vpub.WriteH264(nals, out); err != nil {
+	var err error
+	if s.videoHEVC {
+		err = s.vpub.WriteH265(nals, out)
+	} else {
+		err = s.vpub.WriteH264(nals, out)
+	}
+	if err != nil {
 		s.vpub.Close()
 		s.vpub = nil
 	}
 }
 
 func (s *nativeSink) dialViewerCopyLocked() {
-	if s.vpubDialing || s.closed || s.sps == nil || s.pps == nil || s.now().Sub(s.vpubLast) < 5*time.Second {
+	if s.vpubDialing || s.closed || s.sps == nil || s.pps == nil || (s.videoHEVC && s.vps == nil) || s.now().Sub(s.vpubLast) < 5*time.Second {
 		return
 	}
 	s.vpubDialing, s.vpubLast = true, s.now()
-	url, sps, pps := s.rtspURL+ViewerPathSuffix, s.sps, s.pps
+	url, sps, pps, vps, hevc := s.rtspURL+ViewerPathSuffix, s.sps, s.pps, s.vps, s.videoHEVC
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		pub, err := dialRTSPPublisher(ctx, url, sps, pps, nil)
+		var pub *rtspPublisher
+		var err error
+		if hevc {
+			pub, err = dialRTSPPublisherHEVC(ctx, url, vps, sps, pps, nil)
+		} else {
+			pub, err = dialRTSPPublisher(ctx, url, sps, pps, nil)
+		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.vpubDialing = false
